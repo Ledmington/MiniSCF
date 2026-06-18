@@ -57,9 +57,9 @@ struct BasisSet {
 impl BasisSet {
     fn contracted_overlap(&self) -> f64 {
         let mut s = 0.0;
-        for A in &self.contracted_gaussians {
-            for B in &self.contracted_gaussians {
-                s += compute_contracted_gaussians_overlap(&A, &B);
+        for a in &self.contracted_gaussians {
+            for b in &self.contracted_gaussians {
+                s += compute_contracted_gaussians_overlap(a, b);
             }
         }
         s
@@ -246,15 +246,30 @@ fn main() {
             },
         ],
     };
+    let sto_3g = BasisSet {
+        contracted_gaussians: vec![phi_1, phi_2],
+    };
 
-    let s_11 = compute_contracted_gaussians_overlap(&phi_1, &phi_1);
-    let s_12 = compute_contracted_gaussians_overlap(&phi_1, &phi_2);
-    let s_21 = compute_contracted_gaussians_overlap(&phi_2, &phi_1);
-    let s_22 = compute_contracted_gaussians_overlap(&phi_2, &phi_2);
+    let s_11 = compute_contracted_gaussians_overlap(
+        &sto_3g.contracted_gaussians[0],
+        &sto_3g.contracted_gaussians[0],
+    );
+    let s_12 = compute_contracted_gaussians_overlap(
+        &sto_3g.contracted_gaussians[0],
+        &sto_3g.contracted_gaussians[1],
+    );
+    let s_21 = compute_contracted_gaussians_overlap(
+        &sto_3g.contracted_gaussians[1],
+        &sto_3g.contracted_gaussians[0],
+    );
+    let s_22 = compute_contracted_gaussians_overlap(
+        &sto_3g.contracted_gaussians[1],
+        &sto_3g.contracted_gaussians[1],
+    );
 
     println!("Overlap:");
-    println!("S = | {:.6} {:.6} |", s_11, s_12);
-    println!("    | {:.6} {:.6} |", s_21, s_22);
+    println!("S = | {s_11:.6} {s_12:.6} |");
+    println!("    | {s_21:.6} {s_22:.6} |");
 
     assert!((s_11 - 1.0).abs() < 1e-6);
     assert!((s_22 - 1.0).abs() < 1e-6);
@@ -262,27 +277,51 @@ fn main() {
 
     println!();
 
-    let t_11 = compute_contracted_gaussians_kinetic_energy(&phi_1, &phi_1);
-    let t_12 = compute_contracted_gaussians_kinetic_energy(&phi_1, &phi_2);
-    let t_21 = compute_contracted_gaussians_kinetic_energy(&phi_2, &phi_1);
-    let t_22 = compute_contracted_gaussians_kinetic_energy(&phi_2, &phi_2);
+    let t_11 = compute_contracted_gaussians_kinetic_energy(
+        &sto_3g.contracted_gaussians[0],
+        &sto_3g.contracted_gaussians[0],
+    );
+    let t_12 = compute_contracted_gaussians_kinetic_energy(
+        &sto_3g.contracted_gaussians[0],
+        &sto_3g.contracted_gaussians[1],
+    );
+    let t_21 = compute_contracted_gaussians_kinetic_energy(
+        &sto_3g.contracted_gaussians[1],
+        &sto_3g.contracted_gaussians[0],
+    );
+    let t_22 = compute_contracted_gaussians_kinetic_energy(
+        &sto_3g.contracted_gaussians[1],
+        &sto_3g.contracted_gaussians[1],
+    );
 
     println!("Kinetic energy:");
-    println!("T = | {:.6} {:.6} |", t_11, t_12);
-    println!("    | {:.6} {:.6} |", t_21, t_22);
+    println!("T = | {t_11:.6} {t_12:.6} |");
+    println!("    | {t_21:.6} {t_22:.6} |");
 
     assert!((t_12 - t_21).abs() < 1e-6);
 
     println!();
 
-    let v_11 = compute_contracted_gaussians_nuclear_attraction(&phi_1, &phi_1);
-    let v_12 = compute_contracted_gaussians_nuclear_attraction(&phi_1, &phi_2);
-    let v_21 = compute_contracted_gaussians_nuclear_attraction(&phi_2, &phi_1);
-    let v_22 = compute_contracted_gaussians_nuclear_attraction(&phi_2, &phi_2);
+    let v_11 = compute_contracted_gaussians_nuclear_attraction(
+        &sto_3g.contracted_gaussians[0],
+        &sto_3g.contracted_gaussians[0],
+    );
+    let v_12 = compute_contracted_gaussians_nuclear_attraction(
+        &sto_3g.contracted_gaussians[0],
+        &sto_3g.contracted_gaussians[1],
+    );
+    let v_21 = compute_contracted_gaussians_nuclear_attraction(
+        &sto_3g.contracted_gaussians[1],
+        &sto_3g.contracted_gaussians[0],
+    );
+    let v_22 = compute_contracted_gaussians_nuclear_attraction(
+        &sto_3g.contracted_gaussians[1],
+        &sto_3g.contracted_gaussians[1],
+    );
 
     println!("Nuclear attraction:");
-    println!("V = | {:.6} {:.6} |", v_11, v_12);
-    println!("    | {:.6} {:.6} |", v_21, v_22);
+    println!("V = | {v_11:.6} {v_12:.6} |");
+    println!("    | {v_21:.6} {v_22:.6} |");
 
     assert!((v_12 - v_21).abs() < 1e-6);
 
@@ -294,39 +333,53 @@ fn main() {
     let h_22 = t_22 + v_22;
 
     println!("Hamiltonian:");
-    println!("H = | {:.6} {:.6} |", h_11, h_12);
-    println!("    | {:.6} {:.6} |", h_21, h_22);
+    println!("H = | {h_11:.6} {h_12:.6} |");
+    println!("    | {h_21:.6} {h_22:.6} |");
 
     assert!((h_12 - h_21).abs() < 1e-6);
 
     println!();
 
     println!("Electron Repulsion Integrals:");
-    let mut eri: [[[[f64; 3]; 3]; 3]; 3] = [[[[0.0; 3]; 3]; 3]; 3];
-    for a in 0..3 {
-        for b in 0..3 {
-            for c in 0..3 {
-                for d in 0..3 {
+    let mut eri: Vec<Vec<Vec<Vec<f64>>>> = vec![
+        vec![
+            vec![
+                vec![0.0; sto_3g.contracted_gaussians.len()];
+                sto_3g.contracted_gaussians.len()
+            ];
+            sto_3g.contracted_gaussians.len()
+        ];
+        sto_3g.contracted_gaussians.len()
+    ];
+    for a in 0..sto_3g.contracted_gaussians.len() {
+        for b in 0..sto_3g.contracted_gaussians.len() {
+            for c in 0..sto_3g.contracted_gaussians.len() {
+                for d in 0..sto_3g.contracted_gaussians.len() {
+                    let A = &sto_3g.contracted_gaussians[a];
+                    let B = &sto_3g.contracted_gaussians[b];
+                    let C = &sto_3g.contracted_gaussians[c];
+                    let D = &sto_3g.contracted_gaussians[d];
+
                     let mut sum = 0.0;
 
                     for i in 0..3 {
                         for j in 0..3 {
                             for k in 0..3 {
                                 for l in 0..3 {
-                                    let d_i = phi_1.coefficients[i];
-                                    let d_j = phi_1.coefficients[j];
-                                    let d_k = phi_1.coefficients[k];
-                                    let d_l = phi_1.coefficients[l];
+                                    let d_i = A.coefficients[i];
+                                    let d_j = B.coefficients[j];
+                                    let d_k = C.coefficients[k];
+                                    let d_l = D.coefficients[l];
 
                                     sum += d_i
                                         * d_j
                                         * d_k
                                         * d_l
                                         * primitive_eri(
-                                            &phi_1.primitives[i],
-                                            &phi_1.primitives[j],
-                                            &phi_1.primitives[k],
-                                            &phi_1.primitives[l],
+                                            &A.primitives[i],
+                                            &B.primitives[j],
+                                            &C.primitives[k],
+                                            &D.primitives[l],
                                         );
                                 }
                             }
@@ -339,23 +392,38 @@ fn main() {
         }
     }
 
-    for a in 0..3 {
-        for b in 0..3 {
-            for c in 0..3 {
-                for d in 0..3 {
+    for a in 0..sto_3g.contracted_gaussians.len() {
+        for b in 0..sto_3g.contracted_gaussians.len() {
+            for c in 0..sto_3g.contracted_gaussians.len() {
+                for d in 0..sto_3g.contracted_gaussians.len() {
                     println!("({a}{b}|{c}{d}) = {}", eri[a][b][c][d]);
                 }
             }
         }
     }
 
-    for a in 0..3 {
-        for b in 0..3 {
-            for c in 0..3 {
-                for d in 0..3 {
-                    assert!((eri[a][b][c][d] - eri[b][a][c][d]).abs() < 1.0e-6);
-                    assert!((eri[a][b][c][d] - eri[a][b][d][c]).abs() < 1.0e-6);
-                    assert!((eri[a][b][c][d] - eri[c][d][a][b]).abs() < 1.0e-6);
+    for a in 0..sto_3g.contracted_gaussians.len() {
+        for b in 0..sto_3g.contracted_gaussians.len() {
+            for c in 0..sto_3g.contracted_gaussians.len() {
+                for d in 0..sto_3g.contracted_gaussians.len() {
+                    assert!(
+                        (eri[a][b][c][d] - eri[b][a][c][d]).abs() < 1.0e-6,
+                        "Expected eri[{a}][{b}][{c}][{d}] = {} and eri[{b}][{a}][{c}][{d}] = {} to be equal but they weren't.",
+                        eri[a][b][c][d],
+                        eri[b][a][c][d]
+                    );
+                    assert!(
+                        (eri[a][b][c][d] - eri[a][b][d][c]).abs() < 1.0e-6,
+                        "Expected eri[{a}][{b}][{c}][{d}] = {} and eri[{a}][{b}][{d}][{c}] = {} to be equal but they weren't.",
+                        eri[a][b][c][d],
+                        eri[a][b][d][c]
+                    );
+                    assert!(
+                        (eri[a][b][c][d] - eri[c][d][a][b]).abs() < 1.0e-6,
+                        "Expected eri[{a}][{b}][{c}][{d}] = {} and eri[{c}][{d}][{a}][{b}] = {} to be equal but they weren't.",
+                        eri[a][b][c][d],
+                        eri[c][d][a][b]
+                    );
                 }
             }
         }
