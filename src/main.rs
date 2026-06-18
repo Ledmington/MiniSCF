@@ -26,13 +26,13 @@ struct PrimitiveGaussian {
 }
 
 impl PrimitiveGaussian {
-    pub fn compute(&self, r: &Point) -> f64 {
-        let dx = r.x - self.center.x;
-        let dy = r.y - self.center.y;
-        let dz = r.z - self.center.z;
-        let r2 = dx * dx + dy * dy + dz * dz;
-        self.normalization_constant * (-self.gaussian_exponent * r2).exp()
-    }
+    // pub fn compute(&self, r: &Point) -> f64 {
+    //     let dx = r.x - self.center.x;
+    //     let dy = r.y - self.center.y;
+    //     let dz = r.z - self.center.z;
+    //     let r2 = dx * dx + dy * dy + dz * dz;
+    //     self.normalization_constant * (-self.gaussian_exponent * r2).exp()
+    // }
 }
 
 struct ContractedGaussian {
@@ -41,9 +41,9 @@ struct ContractedGaussian {
 }
 
 impl ContractedGaussian {
-    pub fn compute(&self, r: &Point) -> f64 {
-        self.primitives.iter().map(|p| p.compute(r)).sum()
-    }
+    // pub fn compute(&self, r: &Point) -> f64 {
+    //     self.primitives.iter().map(|p| p.compute(r)).sum()
+    // }
 }
 
 fn get_normalization_term(alpha: f64) -> f64 {
@@ -55,15 +55,15 @@ struct BasisSet {
 }
 
 impl BasisSet {
-    fn contracted_overlap(&self) -> f64 {
-        let mut s = 0.0;
-        for a in &self.contracted_gaussians {
-            for b in &self.contracted_gaussians {
-                s += compute_contracted_gaussians_overlap(a, b);
-            }
-        }
-        s
-    }
+    // fn contracted_overlap(&self) -> f64 {
+    //     let mut s = 0.0;
+    //     for a in &self.contracted_gaussians {
+    //         for b in &self.contracted_gaussians {
+    //             s += compute_contracted_gaussians_overlap(a, b);
+    //         }
+    //     }
+    //     s
+    // }
 }
 
 fn compute_contracted_gaussians_overlap(a: &ContractedGaussian, b: &ContractedGaussian) -> f64 {
@@ -107,7 +107,12 @@ fn compute_primitive_gaussians_kinetic_energy(a: &PrimitiveGaussian, b: &Primiti
     let p = a.gaussian_exponent + b.gaussian_exponent;
     let mu = (a.gaussian_exponent * b.gaussian_exponent) / p;
     let r2 = a.center.sub(&b.center).norm_squared();
-    mu * (3.0 - 2.0 * mu * r2)
+    a.normalization_constant
+        * b.normalization_constant
+        * (std::f64::consts::PI / p).powf(3.0 / 2.0)
+        * (-mu * r2).exp()
+        * mu
+        * (3.0 - 2.0 * mu * r2)
 }
 
 fn erf(x: f64) -> f64 {
@@ -177,7 +182,18 @@ fn primitive_eri(
     let q = c.gaussian_exponent + d.gaussian_exponent;
     let mu = (a.gaussian_exponent * b.gaussian_exponent) / p;
     let v = (c.gaussian_exponent * d.gaussian_exponent) / q;
-    let t = ((p * q) / (p + q)) * r_ab_2;
+    let p_center = Point {
+        x: (a.gaussian_exponent * a.center.x + b.gaussian_exponent * b.center.x) / p,
+        y: (a.gaussian_exponent * a.center.y + b.gaussian_exponent * b.center.y) / p,
+        z: (a.gaussian_exponent * a.center.z + b.gaussian_exponent * b.center.z) / p,
+    };
+    let q_center = Point {
+        x: (c.gaussian_exponent * c.center.x + d.gaussian_exponent * d.center.x) / q,
+        y: (c.gaussian_exponent * c.center.y + d.gaussian_exponent * d.center.y) / q,
+        z: (c.gaussian_exponent * c.center.z + d.gaussian_exponent * d.center.z) / q,
+    };
+    let r_pq_2 = p_center.sub(&q_center).norm_squared();
+    let t = ((p * q) / (p + q)) * r_pq_2;
     a.normalization_constant
         * b.normalization_constant
         * c.normalization_constant
@@ -351,35 +367,30 @@ fn main() {
         ];
         sto_3g.contracted_gaussians.len()
     ];
-    for a in 0..sto_3g.contracted_gaussians.len() {
-        for b in 0..sto_3g.contracted_gaussians.len() {
-            for c in 0..sto_3g.contracted_gaussians.len() {
-                for d in 0..sto_3g.contracted_gaussians.len() {
-                    let A = &sto_3g.contracted_gaussians[a];
-                    let B = &sto_3g.contracted_gaussians[b];
-                    let C = &sto_3g.contracted_gaussians[c];
-                    let D = &sto_3g.contracted_gaussians[d];
-
+    for (a, contr_gauss_a) in sto_3g.contracted_gaussians.iter().enumerate() {
+        for (b, contr_gauss_b) in sto_3g.contracted_gaussians.iter().enumerate() {
+            for (c, contr_gauss_c) in sto_3g.contracted_gaussians.iter().enumerate() {
+                for (d, contr_gauss_d) in sto_3g.contracted_gaussians.iter().enumerate() {
                     let mut sum = 0.0;
 
                     for i in 0..3 {
                         for j in 0..3 {
                             for k in 0..3 {
                                 for l in 0..3 {
-                                    let d_i = A.coefficients[i];
-                                    let d_j = B.coefficients[j];
-                                    let d_k = C.coefficients[k];
-                                    let d_l = D.coefficients[l];
+                                    let d_i = contr_gauss_a.coefficients[i];
+                                    let d_j = contr_gauss_b.coefficients[j];
+                                    let d_k = contr_gauss_c.coefficients[k];
+                                    let d_l = contr_gauss_d.coefficients[l];
 
                                     sum += d_i
                                         * d_j
                                         * d_k
                                         * d_l
                                         * primitive_eri(
-                                            &A.primitives[i],
-                                            &B.primitives[j],
-                                            &C.primitives[k],
-                                            &D.primitives[l],
+                                            &contr_gauss_a.primitives[i],
+                                            &contr_gauss_b.primitives[j],
+                                            &contr_gauss_c.primitives[k],
+                                            &contr_gauss_d.primitives[l],
                                         );
                                 }
                             }
