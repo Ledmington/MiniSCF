@@ -1,3 +1,5 @@
+use std::f64::consts::PI;
+
 #[derive(Clone, Copy)]
 struct Point {
     x: f64,
@@ -26,6 +28,14 @@ struct PrimitiveGaussian {
 }
 
 impl PrimitiveGaussian {
+    fn new(alpha: f64, center: Point) -> Self {
+        PrimitiveGaussian {
+            normalization_constant: get_normalization_term(alpha),
+            gaussian_exponent: alpha,
+            center,
+        }
+    }
+
     // pub fn compute(&self, r: &Point) -> f64 {
     //     let dx = r.x - self.center.x;
     //     let dy = r.y - self.center.y;
@@ -41,13 +51,24 @@ struct ContractedGaussian {
 }
 
 impl ContractedGaussian {
+    fn new(coefficients: &[f64], alpha: &[f64], center: &Point) -> Self {
+        assert_eq!(coefficients.len(), alpha.len());
+        ContractedGaussian {
+            coefficients: coefficients.to_vec(),
+            primitives: alpha
+                .iter()
+                .map(|a| PrimitiveGaussian::new(*a, *center))
+                .collect(),
+        }
+    }
+
     // pub fn compute(&self, r: &Point) -> f64 {
     //     self.primitives.iter().map(|p| p.compute(r)).sum()
     // }
 }
 
 fn get_normalization_term(alpha: f64) -> f64 {
-    ((2.0 * alpha) / std::f64::consts::PI).powf(3.0 / 4.0)
+    ((2.0 * alpha) / PI).powf(3.0 / 4.0)
 }
 
 struct BasisSet {
@@ -55,6 +76,16 @@ struct BasisSet {
 }
 
 impl BasisSet {
+    fn new(coefficients: &[f64], alpha: &[f64], centers: &[Point]) -> Self {
+        assert_eq!(coefficients.len(), alpha.len());
+        BasisSet {
+            contracted_gaussians: centers
+                .iter()
+                .map(|p| ContractedGaussian::new(coefficients, alpha, p))
+                .collect(),
+        }
+    }
+
     // fn contracted_overlap(&self) -> f64 {
     //     let mut s = 0.0;
     //     for a in &self.contracted_gaussians {
@@ -84,7 +115,7 @@ fn compute_primitive_gaussians_overlap(a: &PrimitiveGaussian, b: &PrimitiveGauss
     let r2 = a.center.sub(&b.center).norm_squared();
     a.normalization_constant
         * b.normalization_constant
-        * (std::f64::consts::PI / p).powf(3.0 / 2.0)
+        * (PI / p).powf(3.0 / 2.0)
         * (-mu * r2).exp()
 }
 
@@ -109,7 +140,7 @@ fn compute_primitive_gaussians_kinetic_energy(a: &PrimitiveGaussian, b: &Primiti
     let r2 = a.center.sub(&b.center).norm_squared();
     a.normalization_constant
         * b.normalization_constant
-        * (std::f64::consts::PI / p).powf(3.0 / 2.0)
+        * (PI / p).powf(3.0 / 2.0)
         * (-mu * r2).exp()
         * mu
         * (3.0 - 2.0 * mu * r2)
@@ -138,7 +169,7 @@ fn boys_0(t: f64) -> f64 {
     if t < 1.0e-8 {
         return 1.0;
     }
-    0.5 * (std::f64::consts::PI / t).sqrt() * erf(t.sqrt())
+    0.5 * (PI / t).sqrt() * erf(t.sqrt())
 }
 
 fn compute_contracted_gaussians_nuclear_attraction(
@@ -165,7 +196,7 @@ fn compute_primitive_gaussians_nuclear_attraction(
     let r2 = a.center.sub(&b.center).norm_squared();
     -(a.normalization_constant
         * b.normalization_constant
-        * ((2.0 * std::f64::consts::PI) / p)
+        * ((2.0 * PI) / p)
         * (-mu * r2).exp()
         * boys_0(p * r2))
 }
@@ -198,7 +229,7 @@ fn primitive_eri(
         * b.normalization_constant
         * c.normalization_constant
         * d.normalization_constant
-        * ((2.0 * std::f64::consts::PI.powf(5.0 / 2.0)) / (p * q * (p + q).sqrt()))
+        * ((2.0 * PI.powf(5.0 / 2.0)) / (p * q * (p + q).sqrt()))
         * (-mu * r_ab_2).exp()
         * (-v * r_cd_2).exp()
         * boys_0(t)
@@ -207,64 +238,24 @@ fn primitive_eri(
 fn main() {
     const R: f64 = 1.4; // bohr
 
-    // 2 Hydrogen atoms
-    let a = Point {
-        x: 0.0,
-        y: 0.0,
-        z: -R / 2.0,
-    };
-    let b = Point {
-        x: 0.0,
-        y: 0.0,
-        z: R / 2.0,
-    };
-
     // Prepare the STO-3G basis
-    let alpha: [f64; 3] = [3.42525091, 0.62391373, 0.16885540];
-    let coefficients: [f64; 3] = [0.15432897, 0.53532814, 0.44463454];
-    let phi_1 = ContractedGaussian {
-        coefficients: coefficients.to_vec(),
-        primitives: vec![
-            PrimitiveGaussian {
-                normalization_constant: get_normalization_term(alpha[0]),
-                gaussian_exponent: alpha[0],
-                center: a,
+    let sto_3g = BasisSet::new(
+        &[0.15432897, 0.53532814, 0.44463454],
+        &[3.42525091, 0.62391373, 0.16885540],
+        // 2 Hydrogen atoms
+        &[
+            Point {
+                x: 0.0,
+                y: 0.0,
+                z: -R / 2.0,
             },
-            PrimitiveGaussian {
-                normalization_constant: get_normalization_term(alpha[1]),
-                gaussian_exponent: alpha[1],
-                center: a,
-            },
-            PrimitiveGaussian {
-                normalization_constant: get_normalization_term(alpha[2]),
-                gaussian_exponent: alpha[2],
-                center: a,
+            Point {
+                x: 0.0,
+                y: 0.0,
+                z: R / 2.0,
             },
         ],
-    };
-    let phi_2 = ContractedGaussian {
-        coefficients: coefficients.to_vec(),
-        primitives: vec![
-            PrimitiveGaussian {
-                normalization_constant: get_normalization_term(alpha[0]),
-                gaussian_exponent: alpha[0],
-                center: b,
-            },
-            PrimitiveGaussian {
-                normalization_constant: get_normalization_term(alpha[1]),
-                gaussian_exponent: alpha[1],
-                center: b,
-            },
-            PrimitiveGaussian {
-                normalization_constant: get_normalization_term(alpha[2]),
-                gaussian_exponent: alpha[2],
-                center: b,
-            },
-        ],
-    };
-    let sto_3g = BasisSet {
-        contracted_gaussians: vec![phi_1, phi_2],
-    };
+    );
 
     let s_11 = compute_contracted_gaussians_overlap(
         &sto_3g.contracted_gaussians[0],
