@@ -1,4 +1,8 @@
+mod matrix;
+
 use std::f64::consts::PI;
+
+use crate::matrix::Matrix;
 
 #[derive(Clone, Copy)]
 struct Point {
@@ -257,93 +261,50 @@ fn main() {
         ],
     );
 
-    let s_11 = compute_contracted_gaussians_overlap(
-        &sto_3g.contracted_gaussians[0],
-        &sto_3g.contracted_gaussians[0],
-    );
-    let s_12 = compute_contracted_gaussians_overlap(
-        &sto_3g.contracted_gaussians[0],
-        &sto_3g.contracted_gaussians[1],
-    );
-    let s_21 = compute_contracted_gaussians_overlap(
-        &sto_3g.contracted_gaussians[1],
-        &sto_3g.contracted_gaussians[0],
-    );
-    let s_22 = compute_contracted_gaussians_overlap(
-        &sto_3g.contracted_gaussians[1],
-        &sto_3g.contracted_gaussians[1],
+    let s = Matrix::foreach(
+        &sto_3g.contracted_gaussians,
+        compute_contracted_gaussians_overlap,
     );
 
-    println!("Overlap:");
-    println!("S = | {s_11:.6} {s_12:.6} |");
-    println!("    | {s_21:.6} {s_22:.6} |");
+    println!("Overlap (S):");
+    println!("{s}");
 
-    assert!((s_11 - 1.0).abs() < 1e-6);
-    assert!((s_22 - 1.0).abs() < 1e-6);
-    assert!((s_12 - s_21).abs() < 1e-6);
+    assert!((s[0][0] - 1.0).abs() < 1e-6);
+    assert!((s[1][1] - 1.0).abs() < 1e-6);
+    assert!((s[0][1] - s[1][0]).abs() < 1e-6);
 
     println!();
 
-    let t_11 = compute_contracted_gaussians_kinetic_energy(
-        &sto_3g.contracted_gaussians[0],
-        &sto_3g.contracted_gaussians[0],
-    );
-    let t_12 = compute_contracted_gaussians_kinetic_energy(
-        &sto_3g.contracted_gaussians[0],
-        &sto_3g.contracted_gaussians[1],
-    );
-    let t_21 = compute_contracted_gaussians_kinetic_energy(
-        &sto_3g.contracted_gaussians[1],
-        &sto_3g.contracted_gaussians[0],
-    );
-    let t_22 = compute_contracted_gaussians_kinetic_energy(
-        &sto_3g.contracted_gaussians[1],
-        &sto_3g.contracted_gaussians[1],
+    let t = Matrix::foreach(
+        &sto_3g.contracted_gaussians,
+        compute_contracted_gaussians_kinetic_energy,
     );
 
-    println!("Kinetic energy:");
-    println!("T = | {t_11:.6} {t_12:.6} |");
-    println!("    | {t_21:.6} {t_22:.6} |");
+    println!("Kinetic energy (T):");
+    println!("{t}");
 
-    assert!((t_12 - t_21).abs() < 1e-6);
+    assert!((t[0][1] - t[1][0]).abs() < 1e-6);
 
     println!();
 
-    let v_11 = compute_contracted_gaussians_nuclear_attraction(
-        &sto_3g.contracted_gaussians[0],
-        &sto_3g.contracted_gaussians[0],
-    );
-    let v_12 = compute_contracted_gaussians_nuclear_attraction(
-        &sto_3g.contracted_gaussians[0],
-        &sto_3g.contracted_gaussians[1],
-    );
-    let v_21 = compute_contracted_gaussians_nuclear_attraction(
-        &sto_3g.contracted_gaussians[1],
-        &sto_3g.contracted_gaussians[0],
-    );
-    let v_22 = compute_contracted_gaussians_nuclear_attraction(
-        &sto_3g.contracted_gaussians[1],
-        &sto_3g.contracted_gaussians[1],
+    let v = Matrix::foreach(
+        &sto_3g.contracted_gaussians,
+        compute_contracted_gaussians_nuclear_attraction,
     );
 
-    println!("Nuclear attraction:");
-    println!("V = | {v_11:.6} {v_12:.6} |");
-    println!("    | {v_21:.6} {v_22:.6} |");
+    println!("Nuclear attraction (V):");
+    println!("{v}");
 
-    assert!((v_12 - v_21).abs() < 1e-6);
+    assert!((v[0][1] - v[1][0]).abs() < 1e-6);
 
     println!();
 
-    let h_11 = t_11 + v_11;
-    let h_12 = t_12 + v_12;
-    let h_21 = t_21 + v_21;
-    let h_22 = t_22 + v_22;
+    let h = t + v;
 
-    println!("Hamiltonian:");
-    println!("H = | {h_11:.6} {h_12:.6} |");
-    println!("    | {h_21:.6} {h_22:.6} |");
+    println!("Hamiltonian (H):");
+    println!("{h}");
 
-    assert!((h_12 - h_21).abs() < 1e-6);
+    assert!((h[0][1] - h[1][0]).abs() < 1e-6);
 
     println!();
 
