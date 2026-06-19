@@ -412,7 +412,7 @@ fn main() {
     let mut d = Matrix::zero(2, 2);
     linalg::factorize(&s, &mut u, &mut d);
 
-    assert!((s.clone() - u.clone() * d.clone() * u.transposed()).is_zero());
+    assert!((s.clone() - u.clone() * &d * &u.transposed()).is_zero());
 
     println!("D:");
     println!("{}", d);
@@ -426,17 +426,15 @@ fn main() {
     println!("{}", d);
     println!();
 
-    let x = u.transposed() * d.clone() * u.clone();
+    let x = u.clone() * &d * &u.transposed();
     println!("X:");
     println!("{}", x);
     println!();
 
     assert!(x.is_symmetric());
-    // assert!(
-    //     (Matrix::identity(d.rows(), d.rows()) - x.transposed() * s.clone() * x.clone()).is_zero()
-    // );
+    assert!((Matrix::identity(d.rows(), d.rows()) - x.transposed() * &s * &x).is_zero()); // this assertion fails
 
-    let h_prime = x.transposed() * h * x;
+    let h_prime = x.transposed() * &h * &x;
 
     println!("H':");
     println!("{}", h_prime);
