@@ -1,3 +1,4 @@
+mod linalg;
 mod matrix;
 
 use std::f64::consts::PI;
@@ -383,6 +384,8 @@ fn main() {
         }
     }
 
+    println!();
+
     for a in 0..sto_3g.contracted_gaussians.len() {
         for b in 0..sto_3g.contracted_gaussians.len() {
             for c in 0..sto_3g.contracted_gaussians.len() {
@@ -394,4 +397,48 @@ fn main() {
             }
         }
     }
+
+    let density = Matrix::zero(2, 2);
+    println!("Density (P):");
+    println!("{density}");
+    println!();
+
+    let f = h.clone();
+    println!("Fock (F):");
+    println!("{f}");
+    println!();
+
+    let mut u = Matrix::identity(2, 2);
+    let mut d = Matrix::zero(2, 2);
+    linalg::factorize(&s, &mut u, &mut d);
+
+    assert!((s.clone() - u.clone() * d.clone() * u.transposed()).is_zero());
+
+    println!("D:");
+    println!("{}", d);
+    println!();
+
+    for i in 0..d.rows() {
+        d[i][i] = 1.0 / d[i][i].sqrt();
+    }
+
+    println!("D^(-1/2):");
+    println!("{}", d);
+    println!();
+
+    let x = u.transposed() * d.clone() * u.clone();
+    println!("X:");
+    println!("{}", x);
+    println!();
+
+    assert!(x.is_symmetric());
+    // assert!(
+    //     (Matrix::identity(d.rows(), d.rows()) - x.transposed() * s.clone() * x.clone()).is_zero()
+    // );
+
+    let h_prime = x.transposed() * h * x;
+
+    println!("H':");
+    println!("{}", h_prime);
+    println!();
 }
