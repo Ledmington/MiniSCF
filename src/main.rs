@@ -239,6 +239,24 @@ fn primitive_eri(
         * boys_0(t)
 }
 
+macro_rules! assert_approx_eq {
+    ($left:expr, $right:expr, $tol:expr) => {{
+        let left = $left;
+        let right = $right;
+        let tol = $tol;
+
+        assert!(
+            (left - right).abs() <= tol,
+            "assertion failed: |{} - {}| <= {}\nleft: {}\nright: {}",
+            left,
+            right,
+            tol,
+            left,
+            right,
+        );
+    }};
+}
+
 fn main() {
     const R: f64 = 1.4; // bohr
 
@@ -269,9 +287,9 @@ fn main() {
     println!("Overlap (S):");
     println!("{s}");
 
-    assert!((s[0][0] - 1.0).abs() < 1e-6);
-    assert!((s[1][1] - 1.0).abs() < 1e-6);
-    assert!((s[0][1] - s[1][0]).abs() < 1e-6);
+    assert_approx_eq!(s[0][0], 1.0, 1e-6);
+    assert_approx_eq!(s[1][1], 1.0, 1e-6);
+    assert_approx_eq!(s[0][1], s[1][0], 1e-6);
 
     println!();
 
@@ -283,7 +301,7 @@ fn main() {
     println!("Kinetic energy (T):");
     println!("{t}");
 
-    assert!((t[0][1] - t[1][0]).abs() < 1e-6);
+    assert_approx_eq!(t[0][1], t[1][0], 1e-6);
 
     println!();
 
@@ -295,7 +313,7 @@ fn main() {
     println!("Nuclear attraction (V):");
     println!("{v}");
 
-    assert!((v[0][1] - v[1][0]).abs() < 1e-6);
+    assert_approx_eq!(v[0][1], v[1][0], 1e-6);
 
     println!();
 
@@ -304,7 +322,7 @@ fn main() {
     println!("Hamiltonian (H):");
     println!("{h}");
 
-    assert!((h[0][1] - h[1][0]).abs() < 1e-6);
+    assert_approx_eq!(h[0][1], h[1][0], 1e-6);
 
     println!();
 
@@ -359,7 +377,7 @@ fn main() {
         for b in 0..sto_3g.contracted_gaussians.len() {
             for c in 0..sto_3g.contracted_gaussians.len() {
                 for d in 0..sto_3g.contracted_gaussians.len() {
-                    println!("({a}{b}|{c}{d}) = {}", eri[a][b][c][d]);
+                    println!("⟨{a}{b}|{c}{d}⟩ = {}", eri[a][b][c][d]);
                 }
             }
         }
@@ -369,24 +387,9 @@ fn main() {
         for b in 0..sto_3g.contracted_gaussians.len() {
             for c in 0..sto_3g.contracted_gaussians.len() {
                 for d in 0..sto_3g.contracted_gaussians.len() {
-                    assert!(
-                        (eri[a][b][c][d] - eri[b][a][c][d]).abs() < 1.0e-6,
-                        "Expected eri[{a}][{b}][{c}][{d}] = {} and eri[{b}][{a}][{c}][{d}] = {} to be equal but they weren't.",
-                        eri[a][b][c][d],
-                        eri[b][a][c][d]
-                    );
-                    assert!(
-                        (eri[a][b][c][d] - eri[a][b][d][c]).abs() < 1.0e-6,
-                        "Expected eri[{a}][{b}][{c}][{d}] = {} and eri[{a}][{b}][{d}][{c}] = {} to be equal but they weren't.",
-                        eri[a][b][c][d],
-                        eri[a][b][d][c]
-                    );
-                    assert!(
-                        (eri[a][b][c][d] - eri[c][d][a][b]).abs() < 1.0e-6,
-                        "Expected eri[{a}][{b}][{c}][{d}] = {} and eri[{c}][{d}][{a}][{b}] = {} to be equal but they weren't.",
-                        eri[a][b][c][d],
-                        eri[c][d][a][b]
-                    );
+                    assert_approx_eq!(eri[a][b][c][d], eri[b][a][c][d], 1.0e-6);
+                    assert_approx_eq!(eri[a][b][c][d], eri[a][b][d][c], 1.0e-6);
+                    assert_approx_eq!(eri[a][b][c][d], eri[c][d][a][b], 1.0e-6);
                 }
             }
         }
