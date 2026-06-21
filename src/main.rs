@@ -5,9 +5,12 @@ mod cube_writer;
 mod point;
 mod sim;
 
+use std::time::Instant;
+
 use clap::Parser;
 
 use ndarray::Array2;
+use simple_logger::SimpleLogger;
 
 use crate::{
     basis::BasisSet,
@@ -49,6 +52,9 @@ fn dump_molecular_orbital(
     c: &Array2<f64>,
     filename: String,
 ) -> std::io::Result<()> {
+    let beginning = Instant::now();
+    log::info!("Starting dumping orbitals");
+
     let grid = Grid {
         origin: Point {
             x: -3.0,
@@ -80,6 +86,12 @@ fn dump_molecular_orbital(
     let cube = CubeWriter::new(atoms.to_vec(), grid.clone());
     let values = build_cube_values(&grid, 0, basis, c);
     cube.write(&filename, &values)?;
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed dumping orbitals in {elapsed:?}");
+    }
+
     Ok(())
 }
 
@@ -105,6 +117,10 @@ struct Args {
 }
 
 fn main() -> std::io::Result<()> {
+    let beginning = Instant::now();
+
+    SimpleLogger::new().init().unwrap();
+
     let args = Args::parse();
 
     const R: f64 = 1.4; // bohr
@@ -141,6 +157,13 @@ fn main() -> std::io::Result<()> {
     let c = run_rhf_simulation(&atoms, &sto_3g, &opt_params);
 
     dump_molecular_orbital(&atoms, &sto_3g, &c, args.output)?;
+
+    log::info!("All done!");
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Total execution time = {elapsed:?}");
+    }
 
     Ok(())
 }

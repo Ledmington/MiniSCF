@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use ndarray::{Array1, Array2};
 use ndarray_linalg::{Eigh, UPLO};
 
@@ -191,6 +193,9 @@ pub(crate) fn run_rhf_simulation(
     basis: &BasisSet,
     opt_params: &OptimizationParameters,
 ) -> Array2<f64> {
+    log::info!("Starting optimization");
+    let beginning = Instant::now();
+
     let n = basis.num_contracted_gaussians();
 
     let mut eri: Vec<Vec<Vec<Vec<f64>>>> =
@@ -206,6 +211,11 @@ pub(crate) fn run_rhf_simulation(
 
     let c = setup_rhf_simulation(basis, &mut eri, &mut h, &mut x);
 
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Optimization setup completed in {elapsed:?}.");
+    }
+
     // initial guess density
     let mut p = Array2::<f64>::zeros((n, n));
     let mut p_new = Array2::<f64>::zeros((n, n));
@@ -220,13 +230,15 @@ pub(crate) fn run_rhf_simulation(
     let e_tol = 1e-10;
     let p_tol = 1e-8;
 
-    println!(" ### Optimization parameters ### ");
-    println!(" Max Iterations : {}", opt_params.max_iterations);
-    println!(" dE tolerance   : {:.6e}", opt_params.e_tol);
-    println!(" dP tolerance   : {:.6e}", opt_params.p_tol);
-    println!();
+    log::info!(" ### Optimization parameters ### ");
+    log::info!(" Max Iterations : {}", opt_params.max_iterations);
+    log::info!(" dE tolerance   : {:.6e}", opt_params.e_tol);
+    log::info!(" dP tolerance   : {:.6e}", opt_params.p_tol);
+    log::info!(" ### Optimization parameters ### ");
 
     for iter in 0..max_iterations {
+        let loop_beginning = Instant::now();
+
         // Build G(P)
         compute_g(n, &p, &eri, &mut g);
 
@@ -254,7 +266,12 @@ pub(crate) fn run_rhf_simulation(
 
         let delta_p = (&p_new - &p).mapv(|x| x * x).sum().sqrt();
 
-        println!("iter {iter:3} E = {e_total:20.12} dE = {delta_e:12.5e} dP = {delta_p:12.5e}");
+        {
+            let elapsed = Instant::now() - loop_beginning;
+            log::info!(
+                "iter {iter:3} E = {e_total:20.12} dE = {delta_e:12.5e} dP = {delta_p:12.5e} time = {elapsed:?}"
+            );
+        }
 
         if delta_e < e_tol && delta_p < p_tol {
             break;
@@ -262,6 +279,11 @@ pub(crate) fn run_rhf_simulation(
 
         p = p_new.clone();
         e_old = e_total;
+    }
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Optimization completed in {elapsed:?}.");
     }
 
     c

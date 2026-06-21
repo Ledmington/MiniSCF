@@ -7,6 +7,8 @@ edition = "2024"
 clap = { version = "4.6.1", features = ["derive"] }
 ndarray = "0.17.2"
 ndarray-linalg = { version = "0.18.1", features = ["openblas"] }
+log = "0.4.33"
+simple_logger = "5.2.0"
 
 [dev-dependencies]
 rand = "0.10.1"
