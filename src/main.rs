@@ -45,6 +45,7 @@ fn dump_molecular_orbital(
     atoms: &[Atom],
     basis: &BasisSet,
     c: &Array2<f64>,
+    filename: String,
 ) -> std::io::Result<()> {
     let grid = Grid {
         origin: Point {
@@ -76,7 +77,7 @@ fn dump_molecular_orbital(
 
     let cube = CubeWriter::new(atoms.to_vec(), grid.clone());
     let values = build_cube_values(&grid, 0, basis, c);
-    cube.write("h2_mo0.cube", &values)?;
+    cube.write(&filename, &values)?;
     Ok(())
 }
 
@@ -95,6 +96,10 @@ struct Args {
     /// Tolerance value for the SCF density
     #[arg(long, default_value_t = 1.0e-8)]
     p_tol: f64,
+
+    /// Name of the file where the write the molecular orbitals
+    #[arg(short, long, default_value = "output.cube")]
+    output: String,
 }
 
 fn main() -> std::io::Result<()> {
@@ -133,7 +138,7 @@ fn main() -> std::io::Result<()> {
 
     let c = run_rhf_simulation(&atoms, &sto_3g, &opt_params);
 
-    dump_molecular_orbital(&atoms, &sto_3g, &c)?;
+    dump_molecular_orbital(&atoms, &sto_3g, &c, args.output)?;
 
     Ok(())
 }
