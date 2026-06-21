@@ -310,7 +310,7 @@ fn main() {
         }
     }
 
-    println!("Overlap (S):\n{:?}\n", s);
+    println!("Overlap (S):\n{s:?}\n");
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {
@@ -318,16 +318,16 @@ fn main() {
     }
     assert_symmetric(&s, 1e-6);
 
-    println!("Kinetic energy (T):\n{:?}\n", t);
+    println!("Kinetic energy (T):\n{t:?}\n");
 
     assert_symmetric(&t, 1e-6);
 
-    println!("Nuclear attraction (V):\n{:?}\n", v);
+    println!("Nuclear attraction (V):\n{v:?}\n");
 
     assert_symmetric(&v, 1e-6);
 
     let h = &t + &v;
-    println!("Hamiltonian (H):\n{:?}\n", h);
+    println!("Hamiltonian (H):\n{h:?}\n");
 
     assert_symmetric(&h, 1e-6);
 
@@ -378,11 +378,27 @@ fn main() {
         }
     }
 
-    for a in 0..sto_3g.contracted_gaussians.len() {
-        for b in 0..sto_3g.contracted_gaussians.len() {
-            for c in 0..sto_3g.contracted_gaussians.len() {
-                for d in 0..sto_3g.contracted_gaussians.len() {
-                    println!("⟨{a}{b}|{c}{d}⟩ = {}", eri[a][b][c][d]);
+    for (a, eri_a) in eri
+        .iter()
+        .enumerate()
+        .take(sto_3g.contracted_gaussians.len())
+    {
+        for (b, eri_a_b) in eri_a
+            .iter()
+            .enumerate()
+            .take(sto_3g.contracted_gaussians.len())
+        {
+            for (c, eri_a_b_c) in eri_a_b
+                .iter()
+                .enumerate()
+                .take(sto_3g.contracted_gaussians.len())
+            {
+                for (d, eri_a_b_c_d) in eri_a_b_c
+                    .iter()
+                    .enumerate()
+                    .take(sto_3g.contracted_gaussians.len())
+                {
+                    println!("⟨{a}{b}|{c}{d}⟩ = {eri_a_b_c_d}");
                 }
             }
         }
@@ -419,7 +435,7 @@ fn main() {
     let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
 
     let x = u.dot(&d_inv_sqrt).dot(&u.t());
-    println!("X:\n{:?}\n", x);
+    println!("X:\n{x:?}\n");
 
     // X must be symmetric
     assert_symmetric(&x, 1e-6);
@@ -430,7 +446,7 @@ fn main() {
 
     // H' = X^T * H * X
     let h_prime = x.t().dot(&h).dot(&x);
-    println!("H':\n{:?}\n", h_prime);
+    println!("H':\n{h_prime:?}\n");
 
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
