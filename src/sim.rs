@@ -1,6 +1,6 @@
 use std::time::Instant;
 
-use ndarray::{Array1, Array2};
+use ndarray::{Array1, Array2, Array4};
 use ndarray_linalg::{Eigh, UPLO};
 
 use crate::{Atom, basis::BasisSet};
@@ -43,7 +43,8 @@ fn compute_density_matrix(n: usize, n_occ: usize, c: &Array2<f64>, p: &mut Array
 }
 
 // TODO: what is G?
-fn compute_g(n: usize, p: &Array2<f64>, eri: &[Vec<Vec<Vec<f64>>>], g: &mut Array2<f64>) {
+fn compute_g(n: usize, p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
+    let mut g = Array2::<f64>::zeros((n, n));
     for mu in 0..n {
         for nu in 0..n {
             let mut sum = 0.0;
@@ -51,13 +52,14 @@ fn compute_g(n: usize, p: &Array2<f64>, eri: &[Vec<Vec<Vec<f64>>>], g: &mut Arra
             for lambda in 0..n {
                 for sigma in 0..n {
                     sum += p[[lambda, sigma]]
-                        * (eri[mu][nu][lambda][sigma] - 0.5 * eri[mu][lambda][nu][sigma]);
+                        * (eri[[mu, nu, lambda, sigma]] - 0.5 * eri[[mu, lambda, nu, sigma]]);
                 }
             }
 
             g[[mu, nu]] = sum;
         }
     }
+    g
 }
 
 fn compute_electronic_energy(n: usize, p: &Array2<f64>, h: &Array2<f64>, f: &Array2<f64>) -> f64 {
@@ -109,20 +111,14 @@ impl OptimizationParameters {
 
 fn setup_rhf_simulation(
     basis: &BasisSet,
-    eri: &mut [Vec<Vec<Vec<f64>>>],
     h: &mut Array2<f64>,
     x: &mut Array2<f64>,
-) -> Array2<f64> {
+) -> (Array2<f64>, Array4<f64>) {
     let n = basis.num_contracted_gaussians();
 
-    // Build S, T, V as Array2
-    let mut s = Array2::<f64>::zeros((n, n));
-    let mut t = Array2::<f64>::zeros((n, n));
-    let mut v = Array2::<f64>::zeros((n, n));
-
-    basis.compute_contracted_gaussians_overlap(&mut s);
-    basis.compute_contracted_gaussians_kinetic_energy(&mut t);
-    basis.compute_contracted_gaussians_nuclear_attraction(&mut v);
+    let s = basis.overlap_matrix();
+    let t = basis.kinetic_energy_matrix();
+    let v = basis.nuclear_attraction_matrix();
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {
@@ -138,22 +134,23 @@ fn setup_rhf_simulation(
 
     assert_symmetric(h, 1e-6);
 
-    basis.compute_electron_repulsion(eri);
+    let eri = basis.electron_repulsion_tensor();
 
-    for (a, eri_a) in eri.iter().enumerate().take(n) {
-        for (b, eri_a_b) in eri_a.iter().enumerate().take(n) {
-            for (c, eri_a_b_c) in eri_a_b.iter().enumerate().take(n) {
-                for (d, eri_a_b_c_d) in eri_a_b_c.iter().enumerate().take(n) {
+    for a in 0..n {
+        for b in 0..n {
+            for c in 0..n {
+                for d in 0..n {
+                    let abcd = eri[[a, b, c, d]];
                     assert!(
-                        approx_eq(*eri_a_b_c_d, eri[b][a][c][d], 1e-6),
+                        approx_eq(abcd, eri[[b, a, c, d]], 1e-6),
                         "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{b}{a}|{c}{d}⟩"
                     );
                     assert!(
-                        approx_eq(*eri_a_b_c_d, eri[a][b][d][c], 1e-6),
+                        approx_eq(abcd, eri[[a, b, d, c]], 1e-6),
                         "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{a}{b}|{d}{c}⟩"
                     );
                     assert!(
-                        approx_eq(*eri_a_b_c_d, eri[c][d][a][b], 1e-6),
+                        approx_eq(abcd, eri[[c, d, a, b]], 1e-6),
                         "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{c}{d}|{a}{b}⟩"
                     );
                 }
@@ -185,7 +182,7 @@ fn setup_rhf_simulation(
     let (_epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
 
     // C = X * C'
-    x.dot(&c_prime)
+    (x.dot(&c_prime), eri)
 }
 
 pub(crate) fn run_rhf_simulation(
@@ -198,18 +195,10 @@ pub(crate) fn run_rhf_simulation(
 
     let n = basis.num_contracted_gaussians();
 
-    let mut eri: Vec<Vec<Vec<Vec<f64>>>> =
-        vec![
-            vec![
-                vec![vec![0.0; basis.num_contracted_gaussians()]; basis.num_contracted_gaussians()];
-                basis.num_contracted_gaussians()
-            ];
-            basis.num_contracted_gaussians()
-        ];
     let mut h = Array2::<f64>::zeros((n, n));
     let mut x = Array2::<f64>::zeros((n, n));
 
-    let c = setup_rhf_simulation(basis, &mut eri, &mut h, &mut x);
+    let (c, eri) = setup_rhf_simulation(basis, &mut h, &mut x);
 
     {
         let elapsed = Instant::now() - beginning;
@@ -219,8 +208,6 @@ pub(crate) fn run_rhf_simulation(
     // initial guess density
     let mut p = Array2::<f64>::zeros((n, n));
     let mut p_new = Array2::<f64>::zeros((n, n));
-
-    let mut g = Array2::<f64>::zeros((n, n));
 
     let n_occ = basis.num_occupied_orbitals();
 
@@ -240,7 +227,7 @@ pub(crate) fn run_rhf_simulation(
         let loop_beginning = Instant::now();
 
         // Build G(P)
-        compute_g(n, &p, &eri, &mut g);
+        let g = compute_g(n, &p, &eri);
 
         // F = H + G
         let f = &h + &g;

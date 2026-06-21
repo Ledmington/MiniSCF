@@ -2,6 +2,7 @@
 
 mod basis;
 mod cube_writer;
+mod integrals;
 mod point;
 mod sim;
 
