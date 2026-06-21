@@ -122,7 +122,7 @@ fn run_rhf_simulation(
 
     for iter in 0..100 {
         // Build G(P)
-        compute_g(n, &p, &eri, &mut g);
+        compute_g(n, &p, eri, &mut g);
 
         // F = H + G
         let f = h + &g;
@@ -140,18 +140,15 @@ fn run_rhf_simulation(
         compute_density_matrix(n, n_occ, &c, &mut p_new);
 
         // RHF energy
-        let e_elec = compute_electronic_energy(n, &p_new, &h, &f);
-        let e_nuclear = nuclear_repulsion_energy(&atoms);
+        let e_elec = compute_electronic_energy(n, &p_new, h, &f);
+        let e_nuclear = nuclear_repulsion_energy(atoms);
         let e_total = e_elec + e_nuclear;
 
         let delta_e = (e_total - e_old).abs();
 
         let delta_p = (&p_new - &p).mapv(|x| x * x).sum().sqrt();
 
-        println!(
-            "iter {:3} E = {:20.12} dE = {:12.5e} dP = {:12.5e}",
-            iter, e_total, delta_e, delta_p
-        );
+        println!("iter {iter:3} E = {e_total:20.12} dE = {delta_e:12.5e} dP = {delta_p:12.5e}");
 
         if delta_e < 1e-10 && delta_p < 1e-8 {
             break;
@@ -174,7 +171,6 @@ fn build_cube_values(grid: &Grid, mo_index: usize, basis: &BasisSet, c: &Array2<
                     z: grid.origin.z + iz as f64 * grid.dz.z,
                 };
 
-                // let psi = mo_value(mo_index, r, basis, c);
                 let psi = basis.compute(mo_index, &r, c);
                 values.push(psi);
             }
@@ -185,7 +181,7 @@ fn build_cube_values(grid: &Grid, mo_index: usize, basis: &BasisSet, c: &Array2<
 }
 
 fn dump_molecular_orbital(
-    atoms: &Vec<Atom>,
+    atoms: &[Atom],
     basis: &BasisSet,
     c: &Array2<f64>,
 ) -> std::io::Result<()> {
@@ -218,7 +214,7 @@ fn dump_molecular_orbital(
     };
 
     let cube = CubeWriter::new(atoms.to_vec(), grid.clone());
-    let values = build_cube_values(&grid, 0, basis, &c);
+    let values = build_cube_values(&grid, 0, basis, c);
     cube.write("h2_mo0.cube", &values)?;
     Ok(())
 }
@@ -336,7 +332,7 @@ fn main() -> std::io::Result<()> {
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
 
-    let (epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
+    let (_epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
 
     let c = x.dot(&c_prime);
 

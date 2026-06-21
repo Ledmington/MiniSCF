@@ -84,7 +84,7 @@ impl CubeWriter {
         let mut count = 0;
 
         for v in values {
-            write!(f, "{:13.5e}", v)?;
+            write!(f, "{v:13.5e}")?;
             count += 1;
 
             if count % 6 == 0 {
