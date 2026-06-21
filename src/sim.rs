@@ -194,7 +194,17 @@ pub(crate) fn run_rhf_simulation(atoms: &[Atom], basis: &BasisSet) -> Array2<f64
 
     let mut e_old = 0.0;
 
-    for iter in 0..100 {
+    let max_iterations = 100;
+    let e_tol = 1e-10;
+    let p_tol = 1e-8;
+
+    println!(" ### Optimization parameters ### ");
+    println!(" Max Iterations : {max_iterations} ");
+    println!(" dE tolerance   : {e_tol:.6e} ");
+    println!(" dP tolerance   : {p_tol:.6e} ");
+    println!();
+
+    for iter in 0..max_iterations {
         // Build G(P)
         compute_g(n, &p, &eri, &mut g);
 
@@ -224,7 +234,7 @@ pub(crate) fn run_rhf_simulation(atoms: &[Atom], basis: &BasisSet) -> Array2<f64
 
         println!("iter {iter:3} E = {e_total:20.12} dE = {delta_e:12.5e} dP = {delta_p:12.5e}");
 
-        if delta_e < 1e-10 && delta_p < 1e-8 {
+        if delta_e < e_tol && delta_p < p_tol {
             break;
         }
 
