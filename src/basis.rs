@@ -100,6 +100,10 @@ impl BasisSet {
         }
     }
 
+    pub(crate) fn num_occupied_orbitals(&self) -> usize {
+        1
+    }
+
     fn compute_overlap(a: &ContractedGaussian, b: &ContractedGaussian) -> f64 {
         let mut s = 0.0;
         for (i, prim_a) in a.primitives.iter().enumerate() {
