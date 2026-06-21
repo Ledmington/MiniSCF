@@ -240,23 +240,29 @@ fn primitive_eri(
         * boys_0(t)
 }
 
-// macro_rules! assert_approx_eq {
-//     ($left:expr, $right:expr, $tol:expr) => {{
-//         let left = $left;
-//         let right = $right;
-//         let tol = $tol;
+fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
+    (a - b).abs() <= tol
+}
 
-//         assert!(
-//             (left - right).abs() <= tol,
-//             "assertion failed: |{} - {}| <= {}\nleft: {}\nright: {}",
-//             left,
-//             right,
-//             tol,
-//             left,
-//             right,
-//         );
-//     }};
-// }
+fn assert_matrix_approx_eq(a: &Array2<f64>, b: &Array2<f64>, tol: f64) {
+    assert_eq!(a.shape(), b.shape(), "shape mismatch");
+    for ((i, j), val) in a.indexed_iter() {
+        assert!(
+            approx_eq(*val, b[[i, j]], tol),
+            "matrices differ at [{i},{j}]: {} vs {}",
+            val,
+            b[[i, j]]
+        );
+    }
+}
+
+fn assert_symmetric(m: &Array2<f64>, tol: f64) {
+    assert_matrix_approx_eq(m, &m.t().to_owned(), tol);
+}
+
+fn identity(n: usize) -> Array2<f64> {
+    Array2::from_diag(&Array1::ones(n))
+}
 
 fn main() {
     const R: f64 = 1.4; // bohr
@@ -305,11 +311,25 @@ fn main() {
     }
 
     println!("Overlap (S):\n{:?}\n", s);
+
+    // diagonal must be 1, and S must be symmetric
+    for i in 0..n {
+        assert!(approx_eq(s[[i, i]], 1.0, 1e-6), "S[{i},{i}] != 1");
+    }
+    assert_symmetric(&s, 1e-6);
+
     println!("Kinetic energy (T):\n{:?}\n", t);
+
+    assert_symmetric(&t, 1e-6);
+
     println!("Nuclear attraction (V):\n{:?}\n", v);
+
+    assert_symmetric(&v, 1e-6);
 
     let h = &t + &v;
     println!("Hamiltonian (H):\n{:?}\n", h);
+
+    assert_symmetric(&h, 1e-6);
 
     println!("Electron Repulsion Integrals:");
     let mut eri: Vec<Vec<Vec<Vec<f64>>>> = vec![
@@ -368,6 +388,28 @@ fn main() {
         }
     }
 
+    for a in 0..n {
+        for b in 0..n {
+            for c in 0..n {
+                for d in 0..n {
+                    let abcd = eri[a][b][c][d];
+                    assert!(
+                        approx_eq(abcd, eri[b][a][c][d], 1e-6),
+                        "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{b}{a}|{c}{d}⟩"
+                    );
+                    assert!(
+                        approx_eq(abcd, eri[a][b][d][c], 1e-6),
+                        "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{a}{b}|{d}{c}⟩"
+                    );
+                    assert!(
+                        approx_eq(abcd, eri[c][d][a][b], 1e-6),
+                        "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{c}{d}|{a}{b}⟩"
+                    );
+                }
+            }
+        }
+    }
+
     println!();
 
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
@@ -379,7 +421,17 @@ fn main() {
     let x = u.dot(&d_inv_sqrt).dot(&u.t());
     println!("X:\n{:?}\n", x);
 
+    // X must be symmetric
+    assert_symmetric(&x, 1e-6);
+
+    // X^T * S * X must equal the identity (canonical orthogonalization check)
+    let should_be_identity = x.t().dot(&s).dot(&x);
+    assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
+
     // H' = X^T * H * X
     let h_prime = x.t().dot(&h).dot(&x);
     println!("H':\n{:?}\n", h_prime);
+
+    // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
+    assert_symmetric(&h_prime, 1e-6);
 }
