@@ -87,6 +87,24 @@ fn nuclear_repulsion_energy(atoms: &[Atom]) -> f64 {
     e
 }
 
+pub(crate) struct OptimizationParameters {
+    max_iterations: usize,
+    e_tol: f64,
+    p_tol: f64,
+}
+
+impl OptimizationParameters {
+    pub fn new(max_iterations: usize, e_tol: f64, p_tol: f64) -> Self {
+        assert!(e_tol > 0.0);
+        assert!(p_tol > 0.0);
+        OptimizationParameters {
+            max_iterations,
+            e_tol,
+            p_tol,
+        }
+    }
+}
+
 fn setup_rhf_simulation(
     basis: &BasisSet,
     eri: &mut [Vec<Vec<Vec<f64>>>],
@@ -168,7 +186,11 @@ fn setup_rhf_simulation(
     x.dot(&c_prime)
 }
 
-pub(crate) fn run_rhf_simulation(atoms: &[Atom], basis: &BasisSet) -> Array2<f64> {
+pub(crate) fn run_rhf_simulation(
+    atoms: &[Atom],
+    basis: &BasisSet,
+    opt_params: &OptimizationParameters,
+) -> Array2<f64> {
     let n = basis.num_contracted_gaussians();
 
     let mut eri: Vec<Vec<Vec<Vec<f64>>>> =
@@ -199,9 +221,9 @@ pub(crate) fn run_rhf_simulation(atoms: &[Atom], basis: &BasisSet) -> Array2<f64
     let p_tol = 1e-8;
 
     println!(" ### Optimization parameters ### ");
-    println!(" Max Iterations : {max_iterations} ");
-    println!(" dE tolerance   : {e_tol:.6e} ");
-    println!(" dP tolerance   : {p_tol:.6e} ");
+    println!(" Max Iterations : {}", opt_params.max_iterations);
+    println!(" dE tolerance   : {:.6e}", opt_params.e_tol);
+    println!(" dP tolerance   : {:.6e}", opt_params.p_tol);
     println!();
 
     for iter in 0..max_iterations {

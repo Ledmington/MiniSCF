@@ -4,12 +4,14 @@ mod basis;
 mod cube_writer;
 mod sim;
 
+use clap::Parser;
+
 use ndarray::Array2;
 
 use crate::{
     basis::{BasisSet, Point},
     cube_writer::{CubeWriter, Grid},
-    sim::run_rhf_simulation,
+    sim::{OptimizationParameters, run_rhf_simulation},
 };
 
 #[derive(Clone)]
@@ -78,7 +80,26 @@ fn dump_molecular_orbital(
     Ok(())
 }
 
+/// A small and simple simulator of Hartree-Fock method
+#[derive(Parser, Debug)]
+#[command(version, about, long_about = None)]
+struct Args {
+    /// Maximum number of iterations for the SCF method
+    #[arg(long, default_value_t = 100)]
+    max_iterations: usize,
+
+    /// Tolerance value for the SCF energy
+    #[arg(long, default_value_t = 1.0e-10)]
+    e_tol: f64,
+
+    /// Tolerance value for the SCF density
+    #[arg(long, default_value_t = 1.0e-8)]
+    p_tol: f64,
+}
+
 fn main() -> std::io::Result<()> {
+    let args = Args::parse();
+
     const R: f64 = 1.4; // bohr
 
     // 2 Hydrogen atoms
@@ -108,7 +129,9 @@ fn main() -> std::io::Result<()> {
         &atoms.iter().map(|a| a.position).collect::<Vec<Point>>(),
     );
 
-    let c = run_rhf_simulation(&atoms, &sto_3g);
+    let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
+
+    let c = run_rhf_simulation(&atoms, &sto_3g, &opt_params);
 
     dump_molecular_orbital(&atoms, &sto_3g, &c)?;
 
