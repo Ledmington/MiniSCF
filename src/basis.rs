@@ -46,7 +46,11 @@ impl ContractedGaussian {
     }
 
     pub(crate) fn compute(&self, r: &Point) -> f64 {
-        self.primitives.iter().map(|p| p.compute(r)).sum()
+        self.primitives
+            .iter()
+            .zip(&self.coefficients)
+            .map(|(p, &c)| c * p.compute(r))
+            .sum()
     }
 }
 
@@ -73,12 +77,20 @@ impl BasisSet {
         self.contracted_gaussians.len()
     }
 
-    pub(crate) fn compute_contracted_gaussians_overlap(&self, m: &mut Array2<f64>) {
+    fn fill_one_electron_matrix(
+        &self,
+        m: &mut Array2<f64>,
+        f: impl Fn(&ContractedGaussian, &ContractedGaussian) -> f64,
+    ) {
         for (i, a) in self.contracted_gaussians.iter().enumerate() {
             for (j, b) in self.contracted_gaussians.iter().enumerate() {
-                m[[i, j]] = Self::compute_overlap(a, b);
+                m[[i, j]] = f(a, b);
             }
         }
+    }
+
+    pub(crate) fn compute_contracted_gaussians_overlap(&self, m: &mut Array2<f64>) {
+        self.fill_one_electron_matrix(m, Self::compute_overlap);
     }
 
     pub(crate) fn num_occupied_orbitals(&self) -> usize {
@@ -108,11 +120,7 @@ impl BasisSet {
     }
 
     pub(crate) fn compute_contracted_gaussians_kinetic_energy(&self, m: &mut Array2<f64>) {
-        for (i, a) in self.contracted_gaussians.iter().enumerate() {
-            for (j, b) in self.contracted_gaussians.iter().enumerate() {
-                m[[i, j]] = Self::compute_kinetic_energy(a, b);
-            }
-        }
+        self.fill_one_electron_matrix(m, Self::compute_kinetic_energy);
     }
 
     fn compute_kinetic_energy(a: &ContractedGaussian, b: &ContractedGaussian) -> f64 {
@@ -143,11 +151,7 @@ impl BasisSet {
     }
 
     pub(crate) fn compute_contracted_gaussians_nuclear_attraction(&self, m: &mut Array2<f64>) {
-        for (i, a) in self.contracted_gaussians.iter().enumerate() {
-            for (j, b) in self.contracted_gaussians.iter().enumerate() {
-                m[[i, j]] = Self::compute_nuclear_attraction(a, b);
-            }
-        }
+        self.fill_one_electron_matrix(m, Self::compute_nuclear_attraction);
     }
 
     fn compute_nuclear_attraction(a: &ContractedGaussian, b: &ContractedGaussian) -> f64 {
@@ -185,10 +189,10 @@ impl BasisSet {
                     for (d, contr_gauss_d) in self.contracted_gaussians.iter().enumerate() {
                         let mut sum = 0.0;
 
-                        for i in 0..3 {
-                            for j in 0..3 {
-                                for k in 0..3 {
-                                    for l in 0..3 {
+                        for (i, prim_i) in contr_gauss_a.primitives.iter().enumerate() {
+                            for (j, prim_j) in contr_gauss_a.primitives.iter().enumerate() {
+                                for (k, prim_k) in contr_gauss_a.primitives.iter().enumerate() {
+                                    for (l, prim_l) in contr_gauss_a.primitives.iter().enumerate() {
                                         let d_i = contr_gauss_a.coefficients[i];
                                         let d_j = contr_gauss_b.coefficients[j];
                                         let d_k = contr_gauss_c.coefficients[k];
@@ -198,12 +202,7 @@ impl BasisSet {
                                             * d_j
                                             * d_k
                                             * d_l
-                                            * Self::primitive_eri(
-                                                &contr_gauss_a.primitives[i],
-                                                &contr_gauss_b.primitives[j],
-                                                &contr_gauss_c.primitives[k],
-                                                &contr_gauss_d.primitives[l],
-                                            );
+                                            * Self::primitive_eri(prim_i, prim_j, prim_k, prim_l);
                                     }
                                 }
                             }
