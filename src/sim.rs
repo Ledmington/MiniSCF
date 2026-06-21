@@ -94,7 +94,7 @@ pub(crate) struct OptimizationParameters {
 }
 
 impl OptimizationParameters {
-    pub fn new(max_iterations: usize, e_tol: f64, p_tol: f64) -> Self {
+    pub(crate) fn new(max_iterations: usize, e_tol: f64, p_tol: f64) -> Self {
         assert!(e_tol > 0.0);
         assert!(p_tol > 0.0);
         OptimizationParameters {

@@ -5,27 +5,27 @@ use crate::Atom;
 use crate::point::Point;
 
 #[derive(Clone)]
-pub struct Grid {
-    pub origin: Point,
-    pub nx: usize,
-    pub ny: usize,
-    pub nz: usize,
-    pub dx: Point,
-    pub dy: Point,
-    pub dz: Point,
+pub(crate) struct Grid {
+    pub(crate) origin: Point,
+    pub(crate) nx: usize,
+    pub(crate) ny: usize,
+    pub(crate) nz: usize,
+    pub(crate) dx: Point,
+    pub(crate) dy: Point,
+    pub(crate) dz: Point,
 }
 
-pub struct CubeWriter {
-    pub atoms: Vec<Atom>,
-    pub grid: Grid,
+pub(crate) struct CubeWriter {
+    pub(crate) atoms: Vec<Atom>,
+    pub(crate) grid: Grid,
 }
 
 impl CubeWriter {
-    pub fn new(atoms: Vec<Atom>, grid: Grid) -> Self {
+    pub(crate) fn new(atoms: Vec<Atom>, grid: Grid) -> Self {
         Self { atoms, grid }
     }
 
-    pub fn write(&self, path: &str, values: &[f64]) -> std::io::Result<()> {
+    pub(crate) fn write(&self, path: &str, values: &[f64]) -> std::io::Result<()> {
         let mut f = BufWriter::new(File::create(path)?);
 
         // -------------------------
