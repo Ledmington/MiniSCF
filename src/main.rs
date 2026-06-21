@@ -2,6 +2,7 @@
 
 mod basis;
 mod cube_writer;
+mod point;
 mod sim;
 
 use clap::Parser;
@@ -9,8 +10,9 @@ use clap::Parser;
 use ndarray::Array2;
 
 use crate::{
-    basis::{BasisSet, Point},
+    basis::BasisSet,
     cube_writer::{CubeWriter, Grid},
+    point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
 

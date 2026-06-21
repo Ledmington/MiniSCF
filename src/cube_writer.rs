@@ -2,7 +2,7 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 
 use crate::Atom;
-use crate::basis::Point;
+use crate::point::Point;
 
 #[derive(Clone)]
 pub struct Grid {
