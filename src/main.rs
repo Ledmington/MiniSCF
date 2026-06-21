@@ -450,4 +450,47 @@ fn main() {
 
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
+
+    let (epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
+
+    println!("Molecular Orbital coefficients (C'):\n{c_prime:?}\n");
+    println!("Molecular Orbital energies (epsilon):\n{epsilon:?}\n");
+
+    // Build the density matrix
+    let mut p = Array2::<f64>::zeros((n, n));
+
+    for mu in 0..n {
+        for nu in 0..n {
+            let mut sum = 0.0;
+            for i in 0..n {
+                sum += c_prime[[mu, i]] * c_prime[[nu, i]];
+            }
+
+            p[[mu, nu]] = 2.0 * sum;
+        }
+    }
+
+    println!("Density (P):\n{p:?}\n");
+
+    let mut g = Array2::<f64>::zeros((n, n));
+    for mu in 0..n {
+        for nu in 0..n {
+            let mut sum = 0.0;
+
+            for lambda in 0..n {
+                for sigma in 0..n {
+                    sum += p[[lambda, sigma]]
+                        * (eri[mu][nu][lambda][sigma] - 0.5 * eri[mu][lambda][nu][sigma]);
+                }
+            }
+
+            g[[mu, nu]] = sum;
+        }
+    }
+
+    println!("G:\n{g:?}\n");
+
+    let f = h_prime + g;
+
+    println!("Fock (F):\n{f:?}\n");
 }
