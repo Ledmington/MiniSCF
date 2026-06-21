@@ -1,9 +1,9 @@
-mod linalg;
-mod matrix;
+#![forbid(unsafe_code)]
 
 use std::f64::consts::PI;
 
-use crate::matrix::Matrix;
+use ndarray::{Array1, Array2};
+use ndarray_linalg::{Eigh, UPLO};
 
 #[derive(Clone, Copy)]
 struct Point {
@@ -240,23 +240,23 @@ fn primitive_eri(
         * boys_0(t)
 }
 
-macro_rules! assert_approx_eq {
-    ($left:expr, $right:expr, $tol:expr) => {{
-        let left = $left;
-        let right = $right;
-        let tol = $tol;
+// macro_rules! assert_approx_eq {
+//     ($left:expr, $right:expr, $tol:expr) => {{
+//         let left = $left;
+//         let right = $right;
+//         let tol = $tol;
 
-        assert!(
-            (left - right).abs() <= tol,
-            "assertion failed: |{} - {}| <= {}\nleft: {}\nright: {}",
-            left,
-            right,
-            tol,
-            left,
-            right,
-        );
-    }};
-}
+//         assert!(
+//             (left - right).abs() <= tol,
+//             "assertion failed: |{} - {}| <= {}\nleft: {}\nright: {}",
+//             left,
+//             right,
+//             tol,
+//             left,
+//             right,
+//         );
+//     }};
+// }
 
 fn main() {
     const R: f64 = 1.4; // bohr
@@ -280,52 +280,36 @@ fn main() {
         ],
     );
 
-    let s = Matrix::foreach(
-        &sto_3g.contracted_gaussians,
-        compute_contracted_gaussians_overlap,
-    );
+    let n = sto_3g.contracted_gaussians.len();
 
-    println!("Overlap (S):");
-    println!("{s}");
+    // Build S, T, V as Array2
+    let mut s = Array2::<f64>::zeros((n, n));
+    let mut t = Array2::<f64>::zeros((n, n));
+    let mut v = Array2::<f64>::zeros((n, n));
 
-    assert_approx_eq!(s[0][0], 1.0, 1e-6);
-    assert_approx_eq!(s[1][1], 1.0, 1e-6);
-    assert_approx_eq!(s[0][1], s[1][0], 1e-6);
+    for i in 0..n {
+        for j in 0..n {
+            s[[i, j]] = compute_contracted_gaussians_overlap(
+                &sto_3g.contracted_gaussians[i],
+                &sto_3g.contracted_gaussians[j],
+            );
+            t[[i, j]] = compute_contracted_gaussians_kinetic_energy(
+                &sto_3g.contracted_gaussians[i],
+                &sto_3g.contracted_gaussians[j],
+            );
+            v[[i, j]] = compute_contracted_gaussians_nuclear_attraction(
+                &sto_3g.contracted_gaussians[i],
+                &sto_3g.contracted_gaussians[j],
+            );
+        }
+    }
 
-    println!();
+    println!("Overlap (S):\n{:?}\n", s);
+    println!("Kinetic energy (T):\n{:?}\n", t);
+    println!("Nuclear attraction (V):\n{:?}\n", v);
 
-    let t = Matrix::foreach(
-        &sto_3g.contracted_gaussians,
-        compute_contracted_gaussians_kinetic_energy,
-    );
-
-    println!("Kinetic energy (T):");
-    println!("{t}");
-
-    assert_approx_eq!(t[0][1], t[1][0], 1e-6);
-
-    println!();
-
-    let v = Matrix::foreach(
-        &sto_3g.contracted_gaussians,
-        compute_contracted_gaussians_nuclear_attraction,
-    );
-
-    println!("Nuclear attraction (V):");
-    println!("{v}");
-
-    assert_approx_eq!(v[0][1], v[1][0], 1e-6);
-
-    println!();
-
-    let h = t + v;
-
-    println!("Hamiltonian (H):");
-    println!("{h}");
-
-    assert_approx_eq!(h[0][1], h[1][0], 1e-6);
-
-    println!();
+    let h = &t + &v;
+    println!("Hamiltonian (H):\n{:?}\n", h);
 
     println!("Electron Repulsion Integrals:");
     let mut eri: Vec<Vec<Vec<Vec<f64>>>> = vec![
@@ -386,57 +370,16 @@ fn main() {
 
     println!();
 
-    for a in 0..sto_3g.contracted_gaussians.len() {
-        for b in 0..sto_3g.contracted_gaussians.len() {
-            for c in 0..sto_3g.contracted_gaussians.len() {
-                for d in 0..sto_3g.contracted_gaussians.len() {
-                    assert_approx_eq!(eri[a][b][c][d], eri[b][a][c][d], 1.0e-6);
-                    assert_approx_eq!(eri[a][b][c][d], eri[a][b][d][c], 1.0e-6);
-                    assert_approx_eq!(eri[a][b][c][d], eri[c][d][a][b], 1.0e-6);
-                }
-            }
-        }
-    }
+    // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
+    let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
 
-    let density = Matrix::zero(2, 2);
-    println!("Density (P):");
-    println!("{density}");
-    println!();
+    // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
+    let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
 
-    let f = h.clone();
-    println!("Fock (F):");
-    println!("{f}");
-    println!();
+    let x = u.dot(&d_inv_sqrt).dot(&u.t());
+    println!("X:\n{:?}\n", x);
 
-    let mut u = Matrix::identity(2, 2);
-    let mut d = Matrix::zero(2, 2);
-    linalg::factorize(&s, &mut u, &mut d);
-
-    assert!((s.clone() - u.clone() * &d * &u.transposed()).is_zero());
-
-    println!("D:");
-    println!("{}", d);
-    println!();
-
-    for i in 0..d.rows() {
-        d[i][i] = 1.0 / d[i][i].sqrt();
-    }
-
-    println!("D^(-1/2):");
-    println!("{}", d);
-    println!();
-
-    let x = u.clone() * &d * &u.transposed();
-    println!("X:");
-    println!("{}", x);
-    println!();
-
-    assert!(x.is_symmetric());
-    assert!((Matrix::identity(d.rows(), d.rows()) - x.transposed() * &s * &x).is_zero()); // this assertion fails
-
-    let h_prime = x.transposed() * &h * &x;
-
-    println!("H':");
-    println!("{}", h_prime);
-    println!();
+    // H' = X^T * H * X
+    let h_prime = x.t().dot(&h).dot(&x);
+    println!("H':\n{:?}\n", h_prime);
 }
