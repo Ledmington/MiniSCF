@@ -38,13 +38,13 @@ impl PrimitiveGaussian {
         }
     }
 
-    // pub fn compute(&self, r: &Point) -> f64 {
-    //     let dx = r.x - self.center.x;
-    //     let dy = r.y - self.center.y;
-    //     let dz = r.z - self.center.z;
-    //     let r2 = dx * dx + dy * dy + dz * dz;
-    //     self.normalization_constant * (-self.gaussian_exponent * r2).exp()
-    // }
+    pub(crate) fn compute(&self, r: &Point) -> f64 {
+        let dx = r.x - self.center.x;
+        let dy = r.y - self.center.y;
+        let dz = r.z - self.center.z;
+        let r2 = dx * dx + dy * dy + dz * dz;
+        self.normalization_constant * (-self.gaussian_exponent * r2).exp()
+    }
 }
 
 struct ContractedGaussian {
@@ -64,9 +64,9 @@ impl ContractedGaussian {
         }
     }
 
-    // pub fn compute(&self, r: &Point) -> f64 {
-    //     self.primitives.iter().map(|p| p.compute(r)).sum()
-    // }
+    pub(crate) fn compute(&self, r: &Point) -> f64 {
+        self.primitives.iter().map(|p| p.compute(r)).sum()
+    }
 }
 
 fn get_normalization_term(alpha: f64) -> f64 {
@@ -267,6 +267,14 @@ impl BasisSet {
             * (-mu * r_ab_2).exp()
             * (-v * r_cd_2).exp()
             * boys_0(t)
+    }
+
+    pub(crate) fn compute(&self, i: usize, r: &Point, c: &Array2<f64>) -> f64 {
+        let mut sum = 0.0;
+        for (mu, contr_gauss) in self.contracted_gaussians.iter().enumerate() {
+            sum += c[[mu, i]] * contr_gauss.compute(r);
+        }
+        sum
     }
 }
 
