@@ -31,6 +31,37 @@ fn identity(n: usize) -> Array2<f64> {
     Array2::from_diag(&Array1::ones(n))
 }
 
+fn compute_density_matrix(n: usize, c: &Array2<f64>, p: &mut Array2<f64>) {
+    for mu in 0..n {
+        for nu in 0..n {
+            let mut sum = 0.0;
+            for i in 0..n {
+                sum += c[[mu, i]] * c[[nu, i]];
+            }
+
+            p[[mu, nu]] = 2.0 * sum;
+        }
+    }
+}
+
+// TODO: what is G?
+fn compute_g(n: usize, p: &Array2<f64>, eri: &[Vec<Vec<Vec<f64>>>], g: &mut Array2<f64>) {
+    for mu in 0..n {
+        for nu in 0..n {
+            let mut sum = 0.0;
+
+            for lambda in 0..n {
+                for sigma in 0..n {
+                    sum += p[[lambda, sigma]]
+                        * (eri[mu][nu][lambda][sigma] - 0.5 * eri[mu][lambda][nu][sigma]);
+                }
+            }
+
+            g[[mu, nu]] = sum;
+        }
+    }
+}
+
 fn main() {
     const R: f64 = 1.4; // bohr
 
@@ -174,40 +205,20 @@ fn main() {
 
     let (epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
 
-    println!("Molecular Orbital coefficients (C'):\n{c_prime:?}\n");
+    let c = x.dot(&c_prime);
+
+    println!("Molecular Orbital coefficients (C):\n{c:?}\n");
     println!("Molecular Orbital energies (epsilon):\n{epsilon:?}\n");
 
     // Build the density matrix
     let mut p = Array2::<f64>::zeros((n, n));
 
-    for mu in 0..n {
-        for nu in 0..n {
-            let mut sum = 0.0;
-            for i in 0..n {
-                sum += c_prime[[mu, i]] * c_prime[[nu, i]];
-            }
-
-            p[[mu, nu]] = 2.0 * sum;
-        }
-    }
+    compute_density_matrix(n, &c, &mut p);
 
     println!("Density (P):\n{p:?}\n");
 
     let mut g = Array2::<f64>::zeros((n, n));
-    for mu in 0..n {
-        for nu in 0..n {
-            let mut sum = 0.0;
-
-            for lambda in 0..n {
-                for sigma in 0..n {
-                    sum += p[[lambda, sigma]]
-                        * (eri[mu][nu][lambda][sigma] - 0.5 * eri[mu][lambda][nu][sigma]);
-                }
-            }
-
-            g[[mu, nu]] = sum;
-        }
-    }
+    compute_g(n, &p, &eri, &mut g);
 
     println!("G:\n{g:?}\n");
 
