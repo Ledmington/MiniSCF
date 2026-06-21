@@ -283,3 +283,111 @@ fn boys_0(t: f64) -> f64 {
     }
     0.5 * (PI / t).sqrt() * erf(t.sqrt())
 }
+
+#[cfg(test)]
+mod tests {
+    use std::f64::consts::TAU;
+
+    use rand::RngExt;
+
+    use super::*;
+
+    fn random_point_on_sphere(center: Point, radius: f64) -> Point {
+        let mut rng = rand::rng();
+        let z: f64 = rng.random_range(-1.0..=1.0); // z uniformly distributed in [-1, 1]
+        let theta: f64 = rng.random_range(0.0..TAU); // azimuth uniformly distributed in [0, 2π)
+        let xy = (1.0 - z * z).sqrt();
+        Point {
+            x: center.x + radius * xy * theta.cos(),
+            y: center.y + radius * xy * theta.sin(),
+            z: center.z + radius * z,
+        }
+    }
+
+    #[test]
+    fn primitive_gaussian_spherically_symmetric() {
+        let center = Point {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let g = PrimitiveGaussian::new(1.0, center);
+
+        let p0 = random_point_on_sphere(center, 1.0);
+        let f0 = g.compute(&p0);
+        for _ in 0..1000 {
+            let p = random_point_on_sphere(center, 1.0);
+            let f = g.compute(&p);
+            assert!((f - f0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn primitive_gaussian_spreading() {
+        let center = Point {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let g1 = PrimitiveGaussian::new(1.0, center);
+        let g2 = PrimitiveGaussian::new(2.0, center);
+        let p = Point {
+            x: 0.0,
+            y: -1.0,
+            z: -2.0,
+        };
+        assert!(g1.compute(&p) > g2.compute(&p));
+    }
+
+    #[test]
+    fn contracted_gaussian_spherically_symmetric() {
+        let center = Point {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let g = ContractedGaussian::new(&[1.0, 2.0], &[3.0, 4.0], &center);
+
+        let p0 = random_point_on_sphere(center, 1.0);
+        let f0 = g.compute(&p0);
+        for _ in 0..1000 {
+            let p = random_point_on_sphere(center, 1.0);
+            let f = g.compute(&p);
+            assert!((f - f0).abs() < 1e-12);
+        }
+    }
+
+    #[test]
+    fn contracted_gaussian_spreading() {
+        let center = Point {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let g1 = ContractedGaussian::new(&[1.0, 2.0], &[3.0, 4.0], &center);
+        let g2 = ContractedGaussian::new(&[1.0, 2.0], &[4.0, 5.0], &center);
+        let p = Point {
+            x: 0.0,
+            y: -1.0,
+            z: -2.0,
+        };
+        assert!(g1.compute(&p) > g2.compute(&p));
+    }
+
+    #[test]
+    fn contracted_gaussian_coefficients() {
+        let center = Point {
+            x: 1.0,
+            y: 2.0,
+            z: 3.0,
+        };
+        let g1 = ContractedGaussian::new(&[1.0, 2.0], &[3.0, 4.0], &center);
+        let g2 = ContractedGaussian::new(&[0.0, 1.0], &[3.0, 4.0], &center);
+        let p = Point {
+            x: 0.0,
+            y: -1.0,
+            z: -2.0,
+        };
+        assert!(g1.compute(&p) > g2.compute(&p));
+    }
+}
