@@ -92,10 +92,10 @@ impl BasisSet {
         self.contracted_gaussians.len()
     }
 
-    pub(crate) fn compute_contracted_gaussians_overlap(&self, m: &mut Array2<f64>) -> () {
+    pub(crate) fn compute_contracted_gaussians_overlap(&self, m: &mut Array2<f64>) {
         for (i, a) in self.contracted_gaussians.iter().enumerate() {
             for (j, b) in self.contracted_gaussians.iter().enumerate() {
-                m[[i, j]] = Self::compute_overlap(&a, &b);
+                m[[i, j]] = Self::compute_overlap(a, b);
             }
         }
     }
@@ -122,10 +122,10 @@ impl BasisSet {
             * (-mu * r2).exp()
     }
 
-    pub(crate) fn compute_contracted_gaussians_kinetic_energy(&self, m: &mut Array2<f64>) -> () {
+    pub(crate) fn compute_contracted_gaussians_kinetic_energy(&self, m: &mut Array2<f64>) {
         for (i, a) in self.contracted_gaussians.iter().enumerate() {
             for (j, b) in self.contracted_gaussians.iter().enumerate() {
-                m[[i, j]] = Self::compute_kinetic_energy(&a, &b);
+                m[[i, j]] = Self::compute_kinetic_energy(a, b);
             }
         }
     }
@@ -157,13 +157,10 @@ impl BasisSet {
             * (3.0 - 2.0 * mu * r2)
     }
 
-    pub(crate) fn compute_contracted_gaussians_nuclear_attraction(
-        &self,
-        m: &mut Array2<f64>,
-    ) -> () {
+    pub(crate) fn compute_contracted_gaussians_nuclear_attraction(&self, m: &mut Array2<f64>) {
         for (i, a) in self.contracted_gaussians.iter().enumerate() {
             for (j, b) in self.contracted_gaussians.iter().enumerate() {
-                m[[i, j]] = Self::compute_nuclear_attraction(&a, &b);
+                m[[i, j]] = Self::compute_nuclear_attraction(a, b);
             }
         }
     }
@@ -196,7 +193,7 @@ impl BasisSet {
             * boys_0(p * r2))
     }
 
-    pub(crate) fn compute_electron_repulsion(&self, eri: &mut Vec<Vec<Vec<Vec<f64>>>>) -> () {
+    pub(crate) fn compute_electron_repulsion(&self, eri: &mut [Vec<Vec<Vec<f64>>>]) {
         for (a, contr_gauss_a) in self.contracted_gaussians.iter().enumerate() {
             for (b, contr_gauss_b) in self.contracted_gaussians.iter().enumerate() {
                 for (c, contr_gauss_c) in self.contracted_gaussians.iter().enumerate() {
