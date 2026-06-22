@@ -10,12 +10,11 @@ use std::time::Instant;
 
 use clap::Parser;
 
-use ndarray::Array2;
 use simple_logger::SimpleLogger;
 
 use crate::{
     basis::BasisSet,
-    cube_writer::{CubeWriter, Grid},
+    cube_writer::dump_molecular_orbital,
     point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
@@ -24,76 +23,6 @@ use crate::{
 struct Atom {
     z: f64,
     position: Point,
-}
-
-fn build_cube_values(grid: &Grid, mo_index: usize, basis: &BasisSet, c: &Array2<f64>) -> Vec<f64> {
-    let mut values = Vec::new();
-
-    for iz in 0..grid.nz {
-        for iy in 0..grid.ny {
-            for ix in 0..grid.nx {
-                let r = Point {
-                    x: grid.origin.x + ix as f64 * grid.dx.x,
-                    y: grid.origin.y + iy as f64 * grid.dy.y,
-                    z: grid.origin.z + iz as f64 * grid.dz.z,
-                };
-
-                let psi = basis.compute(mo_index, &r, c);
-                values.push(psi);
-            }
-        }
-    }
-
-    values
-}
-
-fn dump_molecular_orbital(
-    atoms: &[Atom],
-    basis: &BasisSet,
-    c: &Array2<f64>,
-    filename: String,
-) -> std::io::Result<()> {
-    let beginning = Instant::now();
-    log::info!("Starting dumping orbitals");
-
-    let grid = Grid {
-        origin: Point {
-            x: -3.0,
-            y: -3.0,
-            z: -3.0,
-        },
-
-        nx: 60,
-        ny: 60,
-        nz: 60,
-
-        dx: Point {
-            x: 0.1,
-            y: 0.0,
-            z: 0.0,
-        },
-        dy: Point {
-            x: 0.0,
-            y: 0.1,
-            z: 0.0,
-        },
-        dz: Point {
-            x: 0.0,
-            y: 0.0,
-            z: 0.1,
-        },
-    };
-
-    let cube = CubeWriter::new(atoms.to_vec(), grid.clone());
-    let values = build_cube_values(&grid, 0, basis, c);
-    cube.write(&filename, &values)?;
-
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Completed dumping orbitals in {elapsed:?}");
-    }
-
-    Ok(())
 }
 
 /// A small and simple simulator of Hartree-Fock method
@@ -112,9 +41,9 @@ struct Args {
     #[arg(long, default_value_t = 1.0e-8)]
     p_tol: f64,
 
-    /// Name of the file where the write the molecular orbitals
-    #[arg(short, long, default_value = "output.cube")]
-    output: String,
+    /// Prefix of the file where to write molecular orbitals
+    #[arg(short, long, default_value = "mo_")]
+    output_prefix: String,
 }
 
 fn main() -> std::io::Result<()> {
@@ -157,7 +86,15 @@ fn main() -> std::io::Result<()> {
 
     let c = run_rhf_simulation(&atoms, &sto_3g, &opt_params);
 
-    dump_molecular_orbital(&atoms, &sto_3g, &c, args.output)?;
+    for mo_index in 0..c.ncols() {
+        dump_molecular_orbital(
+            &atoms,
+            &sto_3g,
+            mo_index,
+            &c,
+            format!("{}{}.cube", args.output_prefix, mo_index),
+        )?;
+    }
 
     log::info!("All done!");
 

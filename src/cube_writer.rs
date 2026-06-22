@@ -1,7 +1,11 @@
 use std::fs::File;
 use std::io::{BufWriter, Write};
+use std::time::Instant;
+
+use ndarray::Array2;
 
 use crate::Atom;
+use crate::basis::BasisSet;
 use crate::point::Point;
 
 #[derive(Clone)]
@@ -10,9 +14,9 @@ pub(crate) struct Grid {
     pub(crate) nx: usize,
     pub(crate) ny: usize,
     pub(crate) nz: usize,
-    pub(crate) dx: Point,
-    pub(crate) dy: Point,
-    pub(crate) dz: Point,
+    pub(crate) dx: f64,
+    pub(crate) dy: f64,
+    pub(crate) dz: f64,
 }
 
 pub(crate) struct CubeWriter {
@@ -52,19 +56,19 @@ impl CubeWriter {
         writeln!(
             f,
             "{:5} {:10.6} {:10.6} {:10.6}",
-            self.grid.nx, self.grid.dx.x, self.grid.dx.y, self.grid.dx.z
+            self.grid.nx, self.grid.dx, 0.0, 0.0
         )?;
 
         writeln!(
             f,
             "{:5} {:10.6} {:10.6} {:10.6}",
-            self.grid.ny, self.grid.dy.x, self.grid.dy.y, self.grid.dy.z
+            self.grid.ny, 0.0, self.grid.dy, 0.0
         )?;
 
         writeln!(
             f,
             "{:5} {:10.6} {:10.6} {:10.6}",
-            self.grid.nz, self.grid.dz.x, self.grid.dz.y, self.grid.dz.z
+            self.grid.nz, 0.0, 0.0, self.grid.dz
         )?;
 
         // -------------------------
@@ -95,4 +99,63 @@ impl CubeWriter {
         writeln!(f)?;
         Ok(())
     }
+}
+
+fn build_cube_values(grid: &Grid, mo_index: usize, basis: &BasisSet, c: &Array2<f64>) -> Vec<f64> {
+    let mut values = Vec::new();
+
+    for iz in 0..grid.nz {
+        for iy in 0..grid.ny {
+            for ix in 0..grid.nx {
+                let r = Point {
+                    x: grid.origin.x + ix as f64 * grid.dx,
+                    y: grid.origin.y + iy as f64 * grid.dy,
+                    z: grid.origin.z + iz as f64 * grid.dz,
+                };
+
+                let psi = basis.compute(mo_index, &r, c);
+                values.push(psi);
+            }
+        }
+    }
+
+    values
+}
+
+pub(crate) fn dump_molecular_orbital(
+    atoms: &[Atom],
+    basis: &BasisSet,
+    mo_index: usize,
+    c: &Array2<f64>,
+    filename: String,
+) -> std::io::Result<()> {
+    let beginning = Instant::now();
+    log::info!("Starting dumping orbitals to '{filename}'");
+
+    let grid = Grid {
+        origin: Point {
+            x: -3.0,
+            y: -3.0,
+            z: -3.0,
+        },
+
+        nx: 60,
+        ny: 60,
+        nz: 60,
+
+        dx: 0.1,
+        dy: 0.1,
+        dz: 0.1,
+    };
+
+    let cube = CubeWriter::new(atoms.to_vec(), grid.clone());
+    let values = build_cube_values(&grid, mo_index, basis, c);
+    cube.write(&filename, &values)?;
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed dumping orbitals in {elapsed:?}");
+    }
+
+    Ok(())
 }
