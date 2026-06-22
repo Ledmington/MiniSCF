@@ -84,7 +84,7 @@ fn nuclear_repulsion_energy(atoms: &[Atom]) -> f64 {
 
             let r = (dx * dx + dy * dy + dz * dz).sqrt();
 
-            e += atoms[a].z * atoms[b].z / r;
+            e += (atoms[a].charge as f64).powi(2) / r;
         }
     }
 

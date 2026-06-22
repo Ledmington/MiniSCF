@@ -4,7 +4,7 @@ use std::time::Instant;
 
 use ndarray::Array2;
 
-use crate::Atom;
+use crate::atom::Atom;
 use crate::basis::BasisSet;
 use crate::point::Point;
 
@@ -78,7 +78,7 @@ impl CubeWriter {
             writeln!(
                 f,
                 "{:5} {:10.6} {:10.6} {:10.6} {:10.6}",
-                atom.z, atom.z, atom.position.x, atom.position.y, atom.position.z
+                atom.charge, atom.charge, atom.position.x, atom.position.y, atom.position.z
             )?;
         }
 

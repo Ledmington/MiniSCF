@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+mod atom;
 mod basis;
 mod cube_writer;
 mod integrals;
@@ -10,20 +11,16 @@ use std::time::Instant;
 
 use clap::Parser;
 
+use ndarray::Array2;
 use simple_logger::SimpleLogger;
 
 use crate::{
+    atom::Atom,
     basis::BasisSet,
     cube_writer::dump_all_molecular_orbitals,
     point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
-
-#[derive(Clone)]
-struct Atom {
-    z: f64,
-    position: Point,
-}
 
 /// A small and simple simulator of Hartree-Fock method
 #[derive(Parser, Debug)]
@@ -46,6 +43,12 @@ struct Args {
     output_prefix: String,
 }
 
+pub struct SCF {
+    pub basis: BasisSet,
+    pub n_electrons: usize,
+    pub density: Array2<f64>,
+}
+
 fn main() -> std::io::Result<()> {
     let beginning = Instant::now();
 
@@ -58,7 +61,8 @@ fn main() -> std::io::Result<()> {
     // 2 Hydrogen atoms
     let atoms = vec![
         Atom {
-            z: 1.0,
+            symbol: "H".to_string(),
+            charge: 1,
             position: Point {
                 x: 0.0,
                 y: 0.0,
@@ -66,7 +70,8 @@ fn main() -> std::io::Result<()> {
             },
         },
         Atom {
-            z: 1.0,
+            symbol: "H".to_string(),
+            charge: 1,
             position: Point {
                 x: 0.0,
                 y: 0.0,
@@ -74,6 +79,19 @@ fn main() -> std::io::Result<()> {
             },
         },
     ];
+
+    log::info!(" ### Input system ### ");
+    for atom in atoms.iter() {
+        log::info!(
+            " {} {} {} {} {}",
+            atom.symbol,
+            atom.charge,
+            atom.position.x,
+            atom.position.y,
+            atom.position.z
+        );
+    }
+    log::info!(" ### Input system ### ");
 
     // Prepare the STO-3G basis
     let sto_3g = BasisSet::new(
