@@ -1,0 +1,57 @@
+name: MiniSCF CI
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  format_check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: stable
+          components: rustfmt
+
+      - name: Check formatting
+        run: cargo fmt -- --check
+
+  build_and_test:
+    runs-on: ubuntu-latest
+    needs: format_check
+    strategy:
+      matrix:
+        toolchain: ["1.88.0", "1.96.0"]
+        profile: ["debug", "release"]
+        include:
+          - profile: release
+            release_flag: "--release"
+          - profile: debug
+            release_flag: ""
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Set up Rust
+        uses: actions-rust-lang/setup-rust-toolchain@v1
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: clippy
+
+      - name: Build
+        run: cargo build ${{ matrix.release_flag }}
+
+      - name: Lint
+        run: cargo clippy --no-deps --all-targets --all-features ${{ matrix.release_flag }} -- -D warnings
+
+      - name: Unit Tests
+        run: cargo test ${{ matrix.release_flag }}
+
+      - name: Docs
+        run: cargo doc --no-deps ${{ matrix.release_flag }}
