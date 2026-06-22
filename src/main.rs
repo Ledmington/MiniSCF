@@ -14,7 +14,7 @@ use simple_logger::SimpleLogger;
 
 use crate::{
     basis::BasisSet,
-    cube_writer::dump_molecular_orbital,
+    cube_writer::dump_all_molecular_orbitals,
     point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
@@ -86,15 +86,7 @@ fn main() -> std::io::Result<()> {
 
     let c = run_rhf_simulation(&atoms, &sto_3g, &opt_params);
 
-    for mo_index in 0..c.ncols() {
-        dump_molecular_orbital(
-            &atoms,
-            &sto_3g,
-            mo_index,
-            &c,
-            format!("{}{}.cube", args.output_prefix, mo_index),
-        )?;
-    }
+    dump_all_molecular_orbitals(&atoms, &sto_3g, &c, args.output_prefix)?;
 
     log::info!("All done!");
 

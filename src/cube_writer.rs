@@ -9,27 +9,27 @@ use crate::basis::BasisSet;
 use crate::point::Point;
 
 #[derive(Clone)]
-pub(crate) struct Grid {
-    pub(crate) origin: Point,
-    pub(crate) nx: usize,
-    pub(crate) ny: usize,
-    pub(crate) nz: usize,
-    pub(crate) dx: f64,
-    pub(crate) dy: f64,
-    pub(crate) dz: f64,
+struct Grid {
+    origin: Point,
+    nx: usize,
+    ny: usize,
+    nz: usize,
+    dx: f64,
+    dy: f64,
+    dz: f64,
 }
 
-pub(crate) struct CubeWriter {
-    pub(crate) atoms: Vec<Atom>,
-    pub(crate) grid: Grid,
+struct CubeWriter {
+    atoms: Vec<Atom>,
+    grid: Grid,
 }
 
 impl CubeWriter {
-    pub(crate) fn new(atoms: Vec<Atom>, grid: Grid) -> Self {
+    fn new(atoms: Vec<Atom>, grid: Grid) -> Self {
         Self { atoms, grid }
     }
 
-    pub(crate) fn write(&self, path: &str, values: &[f64]) -> std::io::Result<()> {
+    fn write(&self, path: &str, values: &[f64]) -> std::io::Result<()> {
         let mut f = BufWriter::new(File::create(path)?);
 
         // -------------------------
@@ -101,7 +101,7 @@ impl CubeWriter {
     }
 }
 
-fn build_cube_values(grid: &Grid, mo_index: usize, basis: &BasisSet, c: &Array2<f64>) -> Vec<f64> {
+fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: usize) -> Vec<f64> {
     let mut values = Vec::new();
 
     for iz in 0..grid.nz {
@@ -122,39 +122,118 @@ fn build_cube_values(grid: &Grid, mo_index: usize, basis: &BasisSet, c: &Array2<
     values
 }
 
-pub(crate) fn dump_molecular_orbital(
-    atoms: &[Atom],
-    basis: &BasisSet,
-    mo_index: usize,
-    c: &Array2<f64>,
-    filename: String,
-) -> std::io::Result<()> {
+fn compute_grid(atoms: &[Atom]) -> Grid {
     let beginning = Instant::now();
-    log::info!("Starting dumping orbitals to '{filename}'");
 
-    let grid = Grid {
-        origin: Point {
-            x: -3.0,
-            y: -3.0,
-            z: -3.0,
-        },
+    log::info!("Pre-computing the orbital grid");
 
-        nx: 60,
-        ny: 60,
-        nz: 60,
+    const PADDING: f64 = 2.0; // bohr
 
-        dx: 0.1,
-        dy: 0.1,
-        dz: 0.1,
+    let min_x = atoms
+        .iter()
+        .map(|a| a.position.x)
+        .fold(f64::INFINITY, f64::min);
+    let max_x = atoms
+        .iter()
+        .map(|a| a.position.x)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_y = atoms
+        .iter()
+        .map(|a| a.position.y)
+        .fold(f64::INFINITY, f64::min);
+    let max_y = atoms
+        .iter()
+        .map(|a| a.position.y)
+        .fold(f64::NEG_INFINITY, f64::max);
+    let min_z = atoms
+        .iter()
+        .map(|a| a.position.z)
+        .fold(f64::INFINITY, f64::min);
+    let max_z = atoms
+        .iter()
+        .map(|a| a.position.z)
+        .fold(f64::NEG_INFINITY, f64::max);
+
+    let origin = Point {
+        x: min_x - PADDING,
+        y: min_y - PADDING,
+        z: min_z - PADDING,
     };
 
-    let cube = CubeWriter::new(atoms.to_vec(), grid.clone());
-    let values = build_cube_values(&grid, mo_index, basis, c);
-    cube.write(&filename, &values)?;
+    let dx = 0.1;
+    let dy = 0.1;
+    let dz = 0.1;
+
+    let nx = ((max_x - min_x + 2.0 * PADDING) / dx).ceil() as usize;
+    let ny = ((max_y - min_y + 2.0 * PADDING) / dy).ceil() as usize;
+    let nz = ((max_z - min_z + 2.0 * PADDING) / dz).ceil() as usize;
 
     {
         let elapsed = Instant::now() - beginning;
-        log::info!("Completed dumping orbitals in {elapsed:?}");
+        log::info!("Completed pre-computing the orbital grid in {elapsed:?}");
+    }
+
+    Grid {
+        origin,
+        nx,
+        ny,
+        nz,
+        dx,
+        dy,
+        dz,
+    }
+}
+
+fn dump_molecular_orbital(
+    writer: &CubeWriter,
+    basis: &BasisSet,
+    c: &Array2<f64>,
+    mo_index: usize,
+    grid: &Grid,
+    filename: String,
+) -> std::io::Result<()> {
+    let beginning = Instant::now();
+    log::info!("Starting writing orbital {mo_index} to '{filename}'");
+
+    let values = evaluate_orbital(grid, basis, c, mo_index);
+    writer.write(&filename, &values)?;
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed writing orbital {mo_index} in {elapsed:?}");
+    }
+
+    Ok(())
+}
+
+pub(crate) fn dump_all_molecular_orbitals(
+    atoms: &[Atom],
+    basis: &BasisSet,
+    c: &Array2<f64>,
+    output_filename_prefix: String,
+) -> std::io::Result<()> {
+    // Pre-compute the grid
+    let grid = compute_grid(atoms);
+
+    let writer = CubeWriter::new(atoms.to_vec(), grid.clone());
+
+    let beginning = Instant::now();
+    log::info!("Starting writing {} orbitals", c.ncols());
+
+    for mo_index in 0..c.ncols() {
+        dump_molecular_orbital(
+            &writer,
+            basis,
+            c,
+            mo_index,
+            &grid,
+            format!("{}{}.cube", output_filename_prefix, mo_index),
+        )?;
+    }
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed writing {} orbitals in {elapsed:?}", c.ncols());
     }
 
     Ok(())
