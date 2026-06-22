@@ -104,13 +104,13 @@ impl CubeWriter {
 fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: usize) -> Vec<f64> {
     let mut values = Vec::new();
 
-    for iz in 0..grid.nz {
+    for ix in 0..grid.nx {
         for iy in 0..grid.ny {
-            for ix in 0..grid.nx {
+            for iz in 0..grid.nz {
                 let r = Point {
-                    x: grid.origin.x + ix as f64 * grid.dx,
-                    y: grid.origin.y + iy as f64 * grid.dy,
-                    z: grid.origin.z + iz as f64 * grid.dz,
+                    x: grid.origin.x + (ix as f64) * grid.dx,
+                    y: grid.origin.y + (iy as f64) * grid.dy,
+                    z: grid.origin.z + (iz as f64) * grid.dz,
                 };
 
                 let psi = basis.compute(mo_index, &r, c);
@@ -127,7 +127,7 @@ fn compute_grid(atoms: &[Atom]) -> Grid {
 
     log::info!("Pre-computing the orbital grid");
 
-    const PADDING: f64 = 2.0; // bohr
+    const PADDING: f64 = 3.0; // bohr
 
     let min_x = atoms
         .iter()
