@@ -98,9 +98,9 @@ fn main() -> std::io::Result<()> {
     let mut shells = Vec::new();
     for atom in &atoms {
         let primitives = vec![
-            PrimitiveGaussian::new(0.15432897, 3.42525091, atom.position, (0, 0, 0)),
-            PrimitiveGaussian::new(0.53532814, 3.62391373, atom.position, (0, 0, 0)),
-            PrimitiveGaussian::new(0.44463454, 3.16885540, atom.position, (0, 0, 0)),
+            PrimitiveGaussian::new(0.15432897, 2.22766, atom.position, (0, 0, 0)),
+            PrimitiveGaussian::new(0.53532814, 0.405771, atom.position, (0, 0, 0)),
+            PrimitiveGaussian::new(0.44463454, 0.109818, atom.position, (0, 0, 0)),
         ];
         shells.push(Shell {
             center: atom.position,

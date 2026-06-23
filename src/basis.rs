@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{f64::consts::PI, sync::Arc};
 
 use ndarray::Array2;
 
@@ -10,7 +10,7 @@ use crate::integrals;
 
 #[derive(Clone)]
 pub(crate) struct PrimitiveGaussian {
-    contraction_coefficient: f64,
+    contraction_coefficient: f64, // already includes normalization
     alpha: f64,
     center: Point,
     angular: (u8, u8, u8), // (lx, ly, lz)
@@ -24,7 +24,7 @@ impl PrimitiveGaussian {
         angular: (u8, u8, u8),
     ) -> Self {
         PrimitiveGaussian {
-            contraction_coefficient,
+            contraction_coefficient: contraction_coefficient * get_normalization_coefficient(alpha),
             alpha,
             center,
             angular,
@@ -56,6 +56,10 @@ impl PrimitiveGaussian {
             * angular_part
             * (-(self.alpha * (dx * dx + dy * dy + dz * dz))).exp()
     }
+}
+
+fn get_normalization_coefficient(alpha: f64) -> f64 {
+    ((2.0 * alpha) / PI).powf(0.75)
 }
 
 pub(crate) struct BasisSet {

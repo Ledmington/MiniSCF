@@ -59,29 +59,17 @@ fn contracted_pair(
 
 fn primitive_overlap(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    a.contraction_coefficient()
-        * b.contraction_coefficient()
-        * (PI / p).powf(1.5)
-        * (-mu * r2).exp()
+    (PI / p).powf(1.5) * (-mu * r2).exp()
 }
 
 fn primitive_kinetic_energy(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    a.contraction_coefficient()
-        * b.contraction_coefficient()
-        * (PI / p).powf(1.5)
-        * (-mu * r2).exp()
-        * mu
-        * (3.0 - 2.0 * mu * r2)
+    (PI / p).powf(1.5) * (-mu * r2).exp() * mu * (3.0 - 2.0 * mu * r2)
 }
 
 fn primitive_nuclear_attraction(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    -(a.contraction_coefficient()
-        * b.contraction_coefficient()
-        * (2.0 * PI / p)
-        * (-mu * r2).exp()
-        * boys_0(p * r2))
+    -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r2))
 }
 
 fn primitive_eri(
