@@ -1,9 +1,7 @@
-use std::time::Instant;
-
+use crate::{Atom, basis::BasisSet};
 use ndarray::{Array1, Array2, Array4};
 use ndarray_linalg::{Eigh, UPLO};
-
-use crate::{Atom, basis::BasisSet};
+use std::time::Instant;
 
 fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol

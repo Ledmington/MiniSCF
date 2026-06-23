@@ -7,23 +7,21 @@ mod integrals;
 mod point;
 mod sim;
 
-use std::{
-    fs::File,
-    io::{BufRead, BufReader},
-    time::Instant,
-};
-
-use clap::Parser;
-
-use ndarray::Array2;
-use simple_logger::SimpleLogger;
-
 use crate::{
     atom::Atom,
     basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell},
     cube_writer::dump_all_molecular_orbitals,
     point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
+};
+use clap::Parser;
+use ndarray::Array2;
+use simple_logger::SimpleLogger;
+use std::collections::HashMap;
+use std::{
+    fs::File,
+    io::{BufRead, BufReader},
+    time::Instant,
 };
 
 /// A small and simple simulator of Hartree-Fock method
@@ -33,6 +31,10 @@ struct Args {
     /// File to read molecule from
     #[arg(short, long, default_value = "input.xyz")]
     input_xyz: String,
+
+    /// File to read basis set from
+    #[arg(short, long, default_value = "basis.gbs")]
+    basis_file: String,
 
     /// Prefix of the file where to write molecular orbitals
     #[arg(short, long, default_value = "mo_")]
@@ -138,6 +140,78 @@ fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
     }
 
     Ok(atoms)
+}
+
+struct ShellTemplate {
+    angular: AngularMomentum::S,
+    primitives: vec![
+        (71.6168370, 0.15432897),
+        (13.0450960, 0.53532814),
+        (3.5305122, 0.44463454),
+    ],
+}
+
+pub(crate) type BasisLibrary = HashMap<String, Vec<ShellTemplate>>;
+
+pub(crate) fn parse_nwchem_basis(text: &str) -> BasisLibrary {
+    let mut library = HashMap::new();
+
+    let mut current_element: Option<String> = None;
+    let mut current_shell: Option<ShellTemplate> = None;
+
+    for line in text.lines() {
+        let line = line.trim();
+
+        if line.is_empty() || line.starts_with('#') || line.starts_with("BASIS") {
+            continue;
+        }
+
+        if line == "END" {
+            break;
+        }
+
+        let fields: Vec<_> = line.split_whitespace().collect();
+
+        // Shell header
+        if fields.len() == 2 {
+            if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
+                library.entry(element).or_default().push(shell);
+            }
+
+            current_element = Some(fields[0].to_string());
+
+            let angular = match fields[1] {
+                "S" => AngularMomentum::S,
+                "P" => AngularMomentum::P,
+                _ => continue,
+            };
+
+            current_shell = Some(ShellTemplate {
+                angular,
+                primitives: Vec::new(),
+            });
+
+            continue;
+        }
+
+        // Primitive
+        if fields.len() >= 2 {
+            let exponent = fields[0].parse::<f64>().unwrap();
+            let coeff = fields[1].parse::<f64>().unwrap();
+
+            current_shell
+                .as_mut()
+                .unwrap()
+                .primitives
+                .push((exponent, coeff));
+        }
+    }
+
+    if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
+        library.entry(element).or_default().push(shell);
+    }
+
+    library
 }
 
 fn main() -> std::io::Result<()> {

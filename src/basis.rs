@@ -1,12 +1,8 @@
-use std::{f64::consts::PI, sync::Arc};
-
-use ndarray::Array2;
-
-use crate::point::Point;
-
-use ndarray::Array4;
-
 use crate::integrals;
+use crate::point::Point;
+use ndarray::Array2;
+use ndarray::Array4;
+use std::{f64::consts::PI, sync::Arc};
 
 #[derive(Clone)]
 pub(crate) struct PrimitiveGaussian {
@@ -99,6 +95,7 @@ impl BasisSet {
         self.shells.len()
     }
 
+    // TODO: is this needed?
     pub(crate) fn num_occupied_orbitals(&self, n_electrons: usize) -> usize {
         n_electrons / 2
     }
