@@ -76,6 +76,9 @@ fn atomic_number(symbol: &str) -> Result<u8, String> {
 }
 
 fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
+    let beginning = Instant::now();
+    log::info!("Started reading input system from file '{path}'");
+
     let file = File::open(path).map_err(|e| format!("failed to open file: {}", e))?;
 
     let mut lines = BufReader::new(file).lines();
@@ -127,6 +130,11 @@ fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
             symbol,
             position: Point { x, y, z },
         });
+    }
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed reading input system from file '{path}' in {elapsed:?}");
     }
 
     Ok(atoms)
