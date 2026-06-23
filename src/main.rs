@@ -16,7 +16,7 @@ use simple_logger::SimpleLogger;
 
 use crate::{
     atom::Atom,
-    basis::BasisSet,
+    basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell},
     cube_writer::dump_all_molecular_orbitals,
     point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
@@ -43,10 +43,11 @@ struct Args {
     output_prefix: String,
 }
 
-pub struct SCF {
-    pub basis: BasisSet,
-    pub n_electrons: usize,
-    pub density: Array2<f64>,
+// TODO: move this into sim.rs
+pub(crate) struct SCF {
+    pub(crate) basis: BasisSet,
+    pub(crate) n_electrons: usize,
+    pub(crate) density: Array2<f64>,
 }
 
 fn main() -> std::io::Result<()> {
@@ -94,11 +95,20 @@ fn main() -> std::io::Result<()> {
     log::info!(" ### Input system ### ");
 
     // Prepare the STO-3G basis
-    let sto_3g = BasisSet::new(
-        &[0.15432897, 0.53532814, 0.44463454],
-        &[3.42525091, 0.62391373, 0.16885540],
-        &atoms.iter().map(|a| a.position).collect::<Vec<Point>>(),
-    );
+    let mut shells = Vec::new();
+    for atom in &atoms {
+        let primitives = vec![
+            PrimitiveGaussian::new(0.15432897, 3.42525091, atom.position, (0, 0, 0)),
+            PrimitiveGaussian::new(0.53532814, 3.62391373, atom.position, (0, 0, 0)),
+            PrimitiveGaussian::new(0.44463454, 3.16885540, atom.position, (0, 0, 0)),
+        ];
+        shells.push(Shell {
+            center: atom.position,
+            angular: AngularMomentum::S,
+            primitives,
+        });
+    }
+    let sto_3g = BasisSet::new(shells);
 
     let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
 

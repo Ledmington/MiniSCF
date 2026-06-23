@@ -1,4 +1,3 @@
-// integrals.rs
 use std::f64::consts::PI;
 
 use crate::basis::{BasisFunction, PrimitiveGaussian};
@@ -22,15 +21,15 @@ pub(crate) fn electron_repulsion(
     d: &BasisFunction,
 ) -> f64 {
     let mut sum = 0.0;
-    for (i, prim_a) in a.shell.primitives.iter().enumerate() {
-        for (j, prim_b) in b.shell.primitives.iter().enumerate() {
-            for (k, prim_c) in c.shell.primitives.iter().enumerate() {
-                for (l, prim_d) in d.shell.primitives.iter().enumerate() {
-                    sum += a.coefficients[i]
-                        * b.coefficients[j]
-                        * c.coefficients[k]
-                        * d.coefficients[l]
-                        * primitive_eri(prim_a, prim_b, prim_c, prim_d);
+    for prim_a in &a.shell.primitives {
+        for prim_b in &b.shell.primitives {
+            for prim_c in &c.shell.primitives {
+                for prim_d in &d.shell.primitives {
+                    sum += prim_a.contraction_coefficient()
+                        * prim_b.contraction_coefficient()
+                        * prim_c.contraction_coefficient()
+                        * prim_d.contraction_coefficient()
+                        * primitive_eri(&prim_a, &prim_b, &prim_c, &prim_d);
                 }
             }
         }
@@ -49,7 +48,7 @@ fn contracted_pair(
 
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
-            sum += pa.coeff * pb.coeff * f(pa, pb);
+            sum += pa.contraction_coefficient() * pb.contraction_coefficient() * f(pa, pb);
         }
     }
 
@@ -60,17 +59,29 @@ fn contracted_pair(
 
 fn primitive_overlap(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    a.coeff * b.coeff * (PI / p).powf(1.5) * (-mu * r2).exp()
+    a.contraction_coefficient()
+        * b.contraction_coefficient()
+        * (PI / p).powf(1.5)
+        * (-mu * r2).exp()
 }
 
 fn primitive_kinetic_energy(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    a.coeff * b.coeff * (PI / p).powf(1.5) * (-mu * r2).exp() * mu * (3.0 - 2.0 * mu * r2)
+    a.contraction_coefficient()
+        * b.contraction_coefficient()
+        * (PI / p).powf(1.5)
+        * (-mu * r2).exp()
+        * mu
+        * (3.0 - 2.0 * mu * r2)
 }
 
 fn primitive_nuclear_attraction(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    -(a.coeff * b.coeff * (2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r2))
+    -(a.contraction_coefficient()
+        * b.contraction_coefficient()
+        * (2.0 * PI / p)
+        * (-mu * r2).exp()
+        * boys_0(p * r2))
 }
 
 fn primitive_eri(
@@ -79,20 +90,20 @@ fn primitive_eri(
     c: &PrimitiveGaussian,
     d: &PrimitiveGaussian,
 ) -> f64 {
-    let r_ab_2 = a.center.sub(&b.center).norm_squared();
-    let r_cd_2 = c.center.sub(&d.center).norm_squared();
-    let p = a.alpha + b.alpha;
-    let q = c.alpha + d.alpha;
-    let mu = (a.alpha * b.alpha) / p;
-    let v = (c.alpha * d.alpha) / q;
+    let r_ab_2 = a.center().sub(&b.center()).norm_squared();
+    let r_cd_2 = c.center().sub(&d.center()).norm_squared();
+    let p = a.alpha() + b.alpha();
+    let q = c.alpha() + d.alpha();
+    let mu = (a.alpha() * b.alpha()) / p;
+    let v = (c.alpha() * d.alpha()) / q;
     let p_center = weighted_center(a, b, p);
     let q_center = weighted_center(c, d, q);
     let t = (p * q / (p + q)) * p_center.sub(&q_center).norm_squared();
 
-    a.coeff
-        * b.coeff
-        * c.coeff
-        * d.coeff
+    a.contraction_coefficient()
+        * b.contraction_coefficient()
+        * c.contraction_coefficient()
+        * d.contraction_coefficient()
         * (2.0 * PI.powf(2.5) / (p * q * (p + q).sqrt()))
         * (-mu * r_ab_2).exp()
         * (-v * r_cd_2).exp()
@@ -103,17 +114,17 @@ fn primitive_eri(
 
 /// Returns (p, μ, |R_A - R_B|²) for a primitive pair.
 fn gaussian_pair_params(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> (f64, f64, f64) {
-    let p = a.alpha + b.alpha;
-    let mu = a.alpha * b.alpha / p;
-    let r2 = a.center.sub(&b.center).norm_squared();
+    let p = a.alpha() + b.alpha();
+    let mu = a.alpha() * b.alpha() / p;
+    let r2 = a.center().sub(&b.center()).norm_squared();
     (p, mu, r2)
 }
 
 fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> crate::point::Point {
     crate::point::Point {
-        x: (a.alpha * a.center.x + b.alpha * b.center.x) / p,
-        y: (a.alpha * a.center.y + b.alpha * b.center.y) / p,
-        z: (a.alpha * a.center.z + b.alpha * b.center.z) / p,
+        x: (a.alpha() * a.center().x + b.alpha() * b.center().x) / p,
+        y: (a.alpha() * a.center().y + b.alpha() * b.center().y) / p,
+        z: (a.alpha() * a.center().z + b.alpha() * b.center().z) / p,
     }
 }
 

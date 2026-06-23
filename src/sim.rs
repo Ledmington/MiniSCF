@@ -209,7 +209,8 @@ pub(crate) fn run_rhf_simulation(
     let mut p = Array2::<f64>::zeros((n, n));
     let mut p_new = Array2::<f64>::zeros((n, n));
 
-    let n_occ = basis.num_occupied_orbitals();
+    let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
+    let n_occ = basis.num_occupied_orbitals(n_electrons);
 
     let mut e_old = 0.0;
 

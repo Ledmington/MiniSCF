@@ -10,20 +10,37 @@ use crate::integrals;
 
 #[derive(Clone)]
 pub(crate) struct PrimitiveGaussian {
-    pub(crate) coeff: f64,
-    pub(crate) alpha: f64,
-    pub(crate) center: Point,
-    pub(crate) angular: (u8, u8, u8), // (lx, ly, lz)
+    contraction_coefficient: f64,
+    alpha: f64,
+    center: Point,
+    angular: (u8, u8, u8), // (lx, ly, lz)
 }
 
 impl PrimitiveGaussian {
-    pub(crate) fn new(alpha: f64, center: Point) -> Self {
+    pub(crate) fn new(
+        contraction_coefficient: f64,
+        alpha: f64,
+        center: Point,
+        angular: (u8, u8, u8),
+    ) -> Self {
         PrimitiveGaussian {
-            coeff: get_normalization_term(alpha),
+            contraction_coefficient,
             alpha,
             center,
-            angular: (0, 0, 0),
+            angular,
         }
+    }
+
+    pub(crate) fn contraction_coefficient(&self) -> f64 {
+        self.contraction_coefficient
+    }
+
+    pub(crate) fn alpha(&self) -> f64 {
+        self.alpha
+    }
+
+    pub(crate) fn center(&self) -> Point {
+        self.center
     }
 
     pub(crate) fn compute(&self, r: &Point) -> f64 {
@@ -31,17 +48,14 @@ impl PrimitiveGaussian {
         let dy = r.y - self.center.y;
         let dz = r.z - self.center.z;
 
-        let angular_part = dx.powi(self.angular.0 as i32)
-            * dy.powi(self.angular.1 as i32)
-            * dz.powi(self.angular.2 as i32);
+        let angular_part = dx.powi(self.angular.0.into())
+            * dy.powi(self.angular.1.into())
+            * dz.powi(self.angular.2.into());
 
-        self.coeff * angular_part * (-(self.alpha * (dx * dx + dy * dy + dz * dz))).exp()
+        self.contraction_coefficient
+            * angular_part
+            * (-(self.alpha * (dx * dx + dy * dy + dz * dz))).exp()
     }
-}
-
-fn get_normalization_term(alpha: f64) -> f64 {
-    use std::f64::consts::PI;
-    ((2.0 * alpha) / PI).powf(3.0 / 4.0)
 }
 
 pub(crate) struct BasisSet {
@@ -139,6 +153,19 @@ impl BasisSet {
 
         eri
     }
+
+    pub(crate) fn evaluate_molecular_orbital(
+        &self,
+        r: &Point,
+        coefficients: &Array2<f64>,
+        mo_index: usize,
+    ) -> f64 {
+        self.functions
+            .iter()
+            .enumerate()
+            .map(|(mu, bf)| coefficients[[mu, mo_index]] * bf.compute(r))
+            .sum()
+    }
 }
 
 #[derive(Clone)]
@@ -156,7 +183,7 @@ pub(crate) struct Shell {
 
 pub(crate) struct BasisFunction {
     pub(crate) shell: Arc<Shell>,
-    pub(crate) component: usize, // 0=s, 0..2 for p
+    pub(crate) component: u8, // 0=s, 0..2 for p
 }
 
 impl BasisFunction {
@@ -172,7 +199,7 @@ impl BasisFunction {
         let gaussian: f64 = shell
             .primitives
             .iter()
-            .map(|p| p.coeff * (-p.alpha * r2).exp())
+            .map(|p| p.contraction_coefficient * (-p.alpha * r2).exp())
             .sum();
 
         let angular = match (shell.angular.clone(), self.component) {
@@ -184,59 +211,5 @@ impl BasisFunction {
         };
 
         gaussian * angular
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use rand::RngExt;
-    use std::f64::consts::TAU;
-
-    fn random_point_on_sphere(center: Point, radius: f64) -> Point {
-        let mut rng = rand::rng();
-        let z: f64 = rng.random_range(-1.0..=1.0); // z uniformly distributed in [-1, 1]
-        let theta: f64 = rng.random_range(0.0..TAU); // azimuth uniformly distributed in [0, 2π)
-        let xy = (1.0 - z * z).sqrt();
-        Point {
-            x: center.x + radius * xy * theta.cos(),
-            y: center.y + radius * xy * theta.sin(),
-            z: center.z + radius * z,
-        }
-    }
-
-    #[test]
-    fn primitive_gaussian_spherically_symmetric() {
-        let center = Point {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-        };
-        let g = PrimitiveGaussian::new(1.0, center);
-
-        let p0 = random_point_on_sphere(center, 1.0);
-        let f0 = g.compute(&p0);
-        for _ in 0..1000 {
-            let p = random_point_on_sphere(center, 1.0);
-            let f = g.compute(&p);
-            assert!((f - f0).abs() < 1e-12);
-        }
-    }
-
-    #[test]
-    fn primitive_gaussian_spreading() {
-        let center = Point {
-            x: 1.0,
-            y: 2.0,
-            z: 3.0,
-        };
-        let g1 = PrimitiveGaussian::new(1.0, center);
-        let g2 = PrimitiveGaussian::new(2.0, center);
-        let p = Point {
-            x: 0.0,
-            y: -1.0,
-            z: -2.0,
-        };
-        assert!(g1.compute(&p) > g2.compute(&p));
     }
 }

@@ -113,7 +113,7 @@ fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: us
                     z: grid.origin.z + (iz as f64) * grid.dz,
                 };
 
-                let psi = basis.compute(mo_index, &r, c);
+                let psi = basis.evaluate_molecular_orbital(&r, c, mo_index);
                 values.push(psi);
             }
         }
