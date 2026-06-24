@@ -5,6 +5,7 @@ use crate::{
     basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell},
 };
 
+#[derive(PartialEq, Debug)]
 pub(crate) struct ShellTemplate {
     angular: AngularMomentum,
     primitives: Vec<(f64, f64)>,
@@ -18,6 +19,17 @@ pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
 
     let text = fs::read_to_string(path).map_err(|e| format!("failed to open file: {}", e))?;
 
+    let result = parse_nwchem_basis_text(&text);
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed reading basis set from file '{path}' in {elapsed:?}");
+    }
+
+    Ok(result)
+}
+
+fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
     let mut library: HashMap<String, Vec<ShellTemplate>> = HashMap::new();
 
     let mut current_element: Option<String> = None;
@@ -36,6 +48,8 @@ pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
 
         let fields: Vec<_> = line.split_whitespace().collect();
 
+        println!("{fields:?}");
+
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
             if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
@@ -47,7 +61,8 @@ pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
             let angular = match fields[1] {
                 "S" => AngularMomentum::S,
                 "P" => AngularMomentum::P,
-                _ => continue,
+                "SP" => todo!(),
+                _ => panic!("Unknown orbital '{}'", fields[1]),
             };
 
             current_shell = Some(ShellTemplate {
@@ -75,12 +90,7 @@ pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
         library.entry(element).or_default().push(shell);
     }
 
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Completed reading basis set from file '{path}' in {elapsed:?}");
-    }
-
-    Ok(library)
+    library
 }
 
 pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
@@ -131,4 +141,94 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
     }
 
     BasisSet::new(shells)
+}
+
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sto_3g_hydrogen() {
+        let text = "BASIS \"ao basis\" SPHERICAL PRINT
+#BASIS SET: (3s) -> [1s]
+H    S
+      0.3425250914E+01       0.1543289673E+00
+      0.6239137298E+00       0.5353281423E+00
+      0.1688554040E+00       0.4446345422E+00
+END
+";
+
+        let basis = parse_nwchem_basis_text(text);
+        let mut expected = HashMap::new();
+        expected.insert(
+            "H".to_string(),
+            vec![ShellTemplate {
+                angular: AngularMomentum::S,
+                primitives: vec![
+                    (3.425250914, 0.1543289673),
+                    (0.6239137298, 0.5353281423),
+                    (0.168855404, 0.4446345422),
+                ],
+            }],
+        );
+        assert_eq!(expected, basis);
+    }
+
+    #[test]
+    fn sto_3g_hydrogen_carbon() {
+        let text = "BASIS \"ao basis\" SPHERICAL PRINT
+#BASIS SET: (3s) -> [1s]
+H    S
+      0.3425250914E+01       0.1543289673E+00
+      0.6239137298E+00       0.5353281423E+00
+      0.1688554040E+00       0.4446345422E+00
+#BASIS SET: (6s,3p) -> [2s,1p]
+C    S
+      0.7161683735E+02       0.1543289673E+00
+      0.1304509632E+02       0.5353281423E+00
+      0.3530512160E+01       0.4446345422E+00
+C    SP
+      0.2941249355E+01      -0.9996722919E-01       0.1559162750E+00
+      0.6834830964E+00       0.3995128261E+00       0.6076837186E+00
+      0.2222899159E+00       0.7001154689E+00       0.3919573931E+00
+END
+
+
+";
+
+        let basis = parse_nwchem_basis_text(text);
+        let mut expected = HashMap::new();
+        expected.insert(
+            "H".to_string(),
+            vec![ShellTemplate {
+                angular: AngularMomentum::S,
+                primitives: vec![
+                    (3.425250914, 0.1543289673),
+                    (0.6239137298, 0.5353281423),
+                    (0.168855404, 0.4446345422),
+                ],
+            }],
+        );
+        expected.insert(
+            "C".to_string(),
+            vec![
+                ShellTemplate {
+                    angular: AngularMomentum::S,
+                    primitives: vec![
+                        (3.425250914, 0.1543289673),
+                        (0.6239137298, 0.5353281423),
+                        (0.168855404, 0.4446345422),
+                    ],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::P,
+                    primitives: vec![
+                        (3.425250914, 0.1543289673),
+                        (0.6239137298, 0.5353281423),
+                        (0.168855404, 0.4446345422),
+                    ],
+                },
+            ],
+        );
+        assert_eq!(expected, basis);
+    }
 }

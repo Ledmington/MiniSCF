@@ -169,7 +169,7 @@ impl BasisSet {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, PartialEq, Debug)]
 pub(crate) enum AngularMomentum {
     S,
     P,
