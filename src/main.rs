@@ -17,7 +17,7 @@ use crate::{
 use clap::Parser;
 use ndarray::Array2;
 use simple_logger::SimpleLogger;
-use std::collections::HashMap;
+use std::{collections::HashMap, fs};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -143,18 +143,19 @@ fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
 }
 
 struct ShellTemplate {
-    angular: AngularMomentum::S,
-    primitives: vec![
-        (71.6168370, 0.15432897),
-        (13.0450960, 0.53532814),
-        (3.5305122, 0.44463454),
-    ],
+    angular: AngularMomentum,
+    primitives: Vec<(f64, f64)>,
 }
 
 pub(crate) type BasisLibrary = HashMap<String, Vec<ShellTemplate>>;
 
-pub(crate) fn parse_nwchem_basis(text: &str) -> BasisLibrary {
-    let mut library = HashMap::new();
+pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
+    let beginning = Instant::now();
+    log::info!("Started reading basis set from file '{path}'");
+
+    let text = fs::read_to_string(path).map_err(|e| format!("failed to open file: {}", e))?;
+
+    let mut library: HashMap<String, Vec<ShellTemplate>> = HashMap::new();
 
     let mut current_element: Option<String> = None;
     let mut current_shell: Option<ShellTemplate> = None;
@@ -173,7 +174,7 @@ pub(crate) fn parse_nwchem_basis(text: &str) -> BasisLibrary {
         let fields: Vec<_> = line.split_whitespace().collect();
 
         // Shell header
-        if fields.len() == 2 {
+        if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
             if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
                 library.entry(element).or_default().push(shell);
             }
@@ -194,7 +195,7 @@ pub(crate) fn parse_nwchem_basis(text: &str) -> BasisLibrary {
             continue;
         }
 
-        // Primitive
+        // Primitive coefficients
         if fields.len() >= 2 {
             let exponent = fields[0].parse::<f64>().unwrap();
             let coeff = fields[1].parse::<f64>().unwrap();
@@ -211,7 +212,62 @@ pub(crate) fn parse_nwchem_basis(text: &str) -> BasisLibrary {
         library.entry(element).or_default().push(shell);
     }
 
-    library
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed reading basis set from file '{path}' in {elapsed:?}");
+    }
+
+    Ok(library)
+}
+
+fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
+    let mut shells = Vec::new();
+
+    for atom in atoms {
+        let templates = basis_library
+            .get(&atom.symbol)
+            .unwrap_or_else(|| panic!("No basis functions found for element '{}'", atom.symbol));
+
+        for template in templates {
+            match template.angular {
+                AngularMomentum::S => {
+                    let primitives = template
+                        .primitives
+                        .iter()
+                        .map(|&(exponent, coeff)| {
+                            PrimitiveGaussian::new(coeff, exponent, atom.position, (0, 0, 0))
+                        })
+                        .collect();
+
+                    shells.push(Shell {
+                        center: atom.position,
+                        angular: AngularMomentum::S,
+                        primitives,
+                    });
+                }
+
+                AngularMomentum::P => {
+                    for powers in [(1, 0, 0), (0, 1, 0), (0, 0, 1)] {
+                        let primitives = template
+                            .primitives
+                            .iter()
+                            .map(|&(exponent, coeff)| {
+                                PrimitiveGaussian::new(coeff, exponent, atom.position, powers)
+                            })
+                            .collect();
+
+                        shells.push(Shell {
+                            center: atom.position,
+                            angular: AngularMomentum::P,
+                            primitives,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    BasisSet::new(shells)
 }
 
 fn main() -> std::io::Result<()> {
@@ -241,27 +297,20 @@ fn main() -> std::io::Result<()> {
     }
     log::info!(" ### Input system ### ");
 
-    // Prepare the STO-3G basis
-    let mut shells = Vec::new();
-    for atom in &atoms {
-        let primitives = vec![
-            PrimitiveGaussian::new(0.1543289673, 0.3425250914e1, atom.position, (0, 0, 0)),
-            PrimitiveGaussian::new(0.5353281423, 0.6239137298, atom.position, (0, 0, 0)),
-            PrimitiveGaussian::new(0.4446345422, 0.1688554040, atom.position, (0, 0, 0)),
-        ];
-        shells.push(Shell {
-            center: atom.position,
-            angular: AngularMomentum::S,
-            primitives,
-        });
-    }
-    let sto_3g = BasisSet::new(shells);
+    let basis_library = parse_nwchem_basis(&args.basis_file).unwrap_or_else(|err| {
+        panic!(
+            "Could not read input file '{}' because:\n{}.",
+            args.basis_file, err
+        )
+    });
+
+    let basis = build_basis(&atoms, &basis_library);
 
     let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
 
-    let c = run_rhf_simulation(&atoms, &sto_3g, &opt_params);
+    let c = run_rhf_simulation(&atoms, &basis, &opt_params);
 
-    dump_all_molecular_orbitals(&atoms, &sto_3g, &c, args.output_prefix)?;
+    dump_all_molecular_orbitals(&atoms, &basis, &c, args.output_prefix)?;
 
     log::info!("All done!");
 
