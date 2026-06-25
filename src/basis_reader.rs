@@ -34,6 +34,7 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 
     let mut current_element: Option<String> = None;
     let mut current_shell: Option<ShellTemplate> = None;
+    let mut current_shell_p: Option<ShellTemplate> = None; // for SP shells
 
     for line in text.lines() {
         let line = line.trim();
@@ -48,11 +49,12 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 
         let fields: Vec<_> = line.split_whitespace().collect();
 
-        println!("{fields:?}");
-
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
             if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
+                if let Some(shell_p) = current_shell_p.take() {
+                    library.entry(element.clone()).or_default().push(shell_p);
+                }
                 library.entry(element).or_default().push(shell);
             }
 
@@ -61,7 +63,13 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
             let angular = match fields[1] {
                 "S" => AngularMomentum::S,
                 "P" => AngularMomentum::P,
-                "SP" => todo!(),
+                "SP" => {
+                    current_shell_p = Some(ShellTemplate {
+                        angular: AngularMomentum::P,
+                        primitives: Vec::new(),
+                    });
+                    AngularMomentum::S
+                }
                 _ => panic!("Unknown orbital '{}'", fields[1]),
             };
 
@@ -83,11 +91,22 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
                 .unwrap()
                 .primitives
                 .push((exponent, coeff));
+
+            // SP: third column is the P contraction coefficient
+            if fields.len() >= 3 {
+                if let Some(ref mut shell_p) = current_shell_p {
+                    let coeff_p = fields[2].parse::<f64>().unwrap();
+                    shell_p.primitives.push((exponent, coeff_p));
+                }
+            }
         }
     }
 
     if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
-        library.entry(element).or_default().push(shell);
+        library.entry(element.clone()).or_default().push(shell);
+        if let Some(shell_p) = current_shell_p.take() {
+            library.entry(element).or_default().push(shell_p);
+        }
     }
 
     library
@@ -191,8 +210,6 @@ C    SP
       0.6834830964E+00       0.3995128261E+00       0.6076837186E+00
       0.2222899159E+00       0.7001154689E+00       0.3919573931E+00
 END
-
-
 ";
 
         let basis = parse_nwchem_basis_text(text);
@@ -214,17 +231,25 @@ END
                 ShellTemplate {
                     angular: AngularMomentum::S,
                     primitives: vec![
-                        (3.425250914, 0.1543289673),
-                        (0.6239137298, 0.5353281423),
-                        (0.168855404, 0.4446345422),
+                        (71.61683735, 0.1543289673),
+                        (13.04509632, 0.5353281423),
+                        (3.530512160, 0.4446345422),
+                    ],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::S,
+                    primitives: vec![
+                        (2.941249355, -0.09996722919),
+                        (0.6834830964, 0.3995128261),
+                        (0.2222899159, 0.7001154689),
                     ],
                 },
                 ShellTemplate {
                     angular: AngularMomentum::P,
                     primitives: vec![
-                        (3.425250914, 0.1543289673),
-                        (0.6239137298, 0.5353281423),
-                        (0.168855404, 0.4446345422),
+                        (2.941249355, 0.1559162750),
+                        (0.6834830964, 0.6076837186),
+                        (0.2222899159, 0.3919573931),
                     ],
                 },
             ],
