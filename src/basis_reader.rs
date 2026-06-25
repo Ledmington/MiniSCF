@@ -93,11 +93,11 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
                 .push((exponent, coeff));
 
             // SP: third column is the P contraction coefficient
-            if fields.len() >= 3 {
-                if let Some(ref mut shell_p) = current_shell_p {
-                    let coeff_p = fields[2].parse::<f64>().unwrap();
-                    shell_p.primitives.push((exponent, coeff_p));
-                }
+            if fields.len() >= 3
+                && let Some(ref mut shell_p) = current_shell_p
+            {
+                let coeff_p = fields[2].parse::<f64>().unwrap();
+                shell_p.primitives.push((exponent, coeff_p));
             }
         }
     }

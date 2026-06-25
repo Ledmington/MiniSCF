@@ -29,7 +29,7 @@ pub(crate) fn electron_repulsion(
                         * prim_b.contraction_coefficient()
                         * prim_c.contraction_coefficient()
                         * prim_d.contraction_coefficient()
-                        * primitive_eri(&prim_a, &prim_b, &prim_c, &prim_d);
+                        * primitive_eri(prim_a, prim_b, prim_c, prim_d);
                 }
             }
         }
