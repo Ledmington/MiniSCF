@@ -20,7 +20,8 @@ impl PrimitiveGaussian {
         angular: (u8, u8, u8),
     ) -> Self {
         PrimitiveGaussian {
-            contraction_coefficient: contraction_coefficient * get_normalization_coefficient(alpha),
+            contraction_coefficient: contraction_coefficient
+                * get_normalization_coefficient(alpha, angular),
             alpha,
             center,
             angular,
@@ -38,24 +39,26 @@ impl PrimitiveGaussian {
     pub(crate) fn center(&self) -> Point {
         self.center
     }
-
-    pub(crate) fn compute(&self, r: &Point) -> f64 {
-        let dx = r.x - self.center.x;
-        let dy = r.y - self.center.y;
-        let dz = r.z - self.center.z;
-
-        let angular_part = dx.powi(self.angular.0.into())
-            * dy.powi(self.angular.1.into())
-            * dz.powi(self.angular.2.into());
-
-        self.contraction_coefficient
-            * angular_part
-            * (-(self.alpha * (dx * dx + dy * dy + dz * dz))).exp()
-    }
 }
 
-fn get_normalization_coefficient(alpha: f64) -> f64 {
-    ((2.0 * alpha) / PI).powf(0.75)
+fn get_normalization_coefficient(alpha: f64, (lx, ly, lz): (u8, u8, u8)) -> f64 {
+    let l = (lx + ly + lz) as i32;
+
+    let numerator = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(l);
+
+    let denominator = double_factorial(2 * lx as i32 - 1)
+        * double_factorial(2 * ly as i32 - 1)
+        * double_factorial(2 * lz as i32 - 1);
+
+    (numerator / denominator as f64).sqrt()
+}
+
+fn double_factorial(n: i32) -> i32 {
+    if n <= 0 {
+        1
+    } else {
+        (1..=n).rev().step_by(2).product()
+    }
 }
 
 pub(crate) struct BasisSet {

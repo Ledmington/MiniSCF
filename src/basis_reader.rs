@@ -162,6 +162,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
     BasisSet::new(shells)
 }
 
+#[cfg(test)]
 mod tests {
     use super::*;
 
