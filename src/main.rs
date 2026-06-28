@@ -8,9 +8,10 @@ mod integrals;
 mod point;
 mod sim;
 
+use crate::basis::{AngularMomentum, PrimitiveGaussian};
 use crate::{
     atom::Atom,
-    basis::BasisSet,
+    basis::{BasisSet, Shell},
     basis_reader::{build_basis, parse_nwchem_basis},
     cube_writer::dump_all_molecular_orbitals,
     point::Point,
@@ -22,6 +23,7 @@ use simple_logger::SimpleLogger;
 use std::{
     fs::File,
     io::{BufRead, BufReader},
+    sync::Arc,
     time::Instant,
 };
 
@@ -178,6 +180,10 @@ fn main() -> std::io::Result<()> {
     });
 
     let basis = build_basis(&atoms, &basis_library);
+
+    log::info!("basis: {:#?}", basis);
+    log::info!("{} basis functions", basis.functions.len());
+    log::info!("{} shells", basis.shells.len());
 
     let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
 
