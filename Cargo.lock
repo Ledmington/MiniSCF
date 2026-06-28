@@ -3,18 +3,6 @@
 version = 4
 
 [[package]]
-name = "MiniSCF"
-version = "0.1.0"
-dependencies = [
- "clap",
- "log",
- "ndarray",
- "ndarray-linalg",
- "rand 0.10.1",
- "simple_logger",
-]
-
-[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -762,6 +750,18 @@ dependencies = [
  "ring",
  "rustls-pki-types",
  "untrusted",
+]
+
+[[package]]
+name = "scf_sim"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "log",
+ "ndarray",
+ "ndarray-linalg",
+ "rand 0.10.1",
+ "simple_logger",
 ]
 
 [[package]]
