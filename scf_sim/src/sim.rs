@@ -1,7 +1,7 @@
 use crate::basis::BasisSet;
-use core::Atom;
 use ndarray::{Array1, Array2, Array4};
 use ndarray_linalg::{Eigh, UPLO};
+use scf_core::Atom;
 use std::time::Instant;
 
 fn approx_eq(a: f64, b: f64, tol: f64) -> bool {

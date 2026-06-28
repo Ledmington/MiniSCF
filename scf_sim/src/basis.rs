@@ -1,7 +1,7 @@
 use crate::integrals;
-use core::Point;
 use ndarray::Array2;
 use ndarray::Array4;
+use scf_core::Point;
 use std::{f64::consts::PI, sync::Arc};
 
 #[derive(Clone, Debug)]

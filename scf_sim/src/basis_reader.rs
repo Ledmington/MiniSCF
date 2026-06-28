@@ -1,4 +1,4 @@
-use core::Atom;
+use scf_core::Atom;
 use std::{collections::HashMap, fs, time::Instant};
 
 use crate::basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell};

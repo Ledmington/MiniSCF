@@ -1,6 +1,6 @@
 use crate::basis::BasisSet;
-use core::{Atom, Point};
 use ndarray::Array2;
+use scf_core::{Atom, Point};
 use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;

@@ -1,4 +1,4 @@
-use core::{Atom, Point, atomic_number};
+use scf_core::{Atom, Point, atomic_number};
 use std::{
     fs::File,
     io::{BufRead, BufReader},

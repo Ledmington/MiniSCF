@@ -1,4 +1,4 @@
-use core::Point;
+use scf_core::Point;
 use std::f64::consts::PI;
 
 use crate::basis::{BasisFunction, PrimitiveGaussian};

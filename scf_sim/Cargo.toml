@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-core = { path = "../core" }
+scf_core = { path = "../scf_core" }
 xyz = { path = "../xyz" }
 clap = { version = "4.6.1", features = ["derive"] }
 ndarray = "0.17.2"
