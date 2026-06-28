@@ -1,10 +1,11 @@
+use core::{Atom, Point, atomic_number};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
     time::Instant,
 };
 
-fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
+pub fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
     let beginning = Instant::now();
     log::info!("Started reading input system from file '{path}'");
 

@@ -1,6 +1,5 @@
-use crate::atom::Atom;
 use crate::basis::BasisSet;
-use crate::point::Point;
+use core::{Atom, Point};
 use ndarray::Array2;
 use std::fs::File;
 use std::io::{BufWriter, Write};

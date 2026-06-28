@@ -1,9 +1,7 @@
+use core::Atom;
 use std::{collections::HashMap, fs, time::Instant};
 
-use crate::{
-    atom::Atom,
-    basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell},
-};
+use crate::basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell};
 
 #[derive(PartialEq, Debug)]
 pub(crate) struct ShellTemplate {

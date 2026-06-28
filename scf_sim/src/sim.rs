@@ -1,4 +1,5 @@
-use crate::{Atom, basis::BasisSet};
+use crate::basis::BasisSet;
+use core::Atom;
 use ndarray::{Array1, Array2, Array4};
 use ndarray_linalg::{Eigh, UPLO};
 use std::time::Instant;

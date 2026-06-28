@@ -1,31 +1,22 @@
 #![forbid(unsafe_code)]
 
-mod atom;
 mod basis;
 mod basis_reader;
 mod cube_writer;
 mod integrals;
-mod point;
 mod sim;
 
-use crate::basis::{AngularMomentum, PrimitiveGaussian};
 use crate::{
-    atom::Atom,
-    basis::{BasisSet, Shell},
+    basis::BasisSet,
     basis_reader::{build_basis, parse_nwchem_basis},
     cube_writer::dump_all_molecular_orbitals,
-    point::Point,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
 use clap::Parser;
 use ndarray::Array2;
 use simple_logger::SimpleLogger;
-use std::{
-    fs::File,
-    io::{BufRead, BufReader},
-    sync::Arc,
-    time::Instant,
-};
+use std::time::Instant;
+use xyz::read_xyz;
 
 /// A small and simple simulator of Hartree-Fock method
 #[derive(Parser, Debug)]
@@ -61,23 +52,6 @@ pub(crate) struct SCF {
     pub(crate) basis: BasisSet,
     pub(crate) n_electrons: usize,
     pub(crate) density: Array2<f64>,
-}
-
-// TODO: move this into Atom
-fn atomic_number(symbol: &str) -> Result<u8, String> {
-    match symbol {
-        "H" => Ok(1),
-        "He" => Ok(2),
-        "Li" => Ok(3),
-        "Be" => Ok(4),
-        "B" => Ok(5),
-        "C" => Ok(6),
-        "N" => Ok(7),
-        "O" => Ok(8),
-        "F" => Ok(9),
-        "Ne" => Ok(10),
-        _ => Err(format!("unknown element: {}", symbol)),
-    }
 }
 
 fn main() -> std::io::Result<()> {

@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "core",
     "xyz",
     "scf_sim",
 ]

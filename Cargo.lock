@@ -201,6 +201,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "core"
+version = "0.1.0"
+
+[[package]]
 name = "cpufeatures"
 version = "0.3.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -757,6 +761,7 @@ name = "scf_sim"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "core",
  "log",
  "ndarray",
  "ndarray-linalg",
@@ -1079,6 +1084,7 @@ dependencies = [
 name = "xyz"
 version = "0.1.0"
 dependencies = [
+ "core",
  "log",
  "simple_logger",
 ]

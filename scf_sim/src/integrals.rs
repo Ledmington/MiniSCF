@@ -1,3 +1,4 @@
+use core::Point;
 use std::f64::consts::PI;
 
 use crate::basis::{BasisFunction, PrimitiveGaussian};
@@ -108,8 +109,8 @@ fn gaussian_pair_params(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> (f64, f
     (p, mu, r2)
 }
 
-fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> crate::point::Point {
-    crate::point::Point {
+fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> Point {
+    Point {
         x: (a.alpha() * a.center().x + b.alpha() * b.center().x) / p,
         y: (a.alpha() * a.center().y + b.alpha() * b.center().y) / p,
         z: (a.alpha() * a.center().z + b.alpha() * b.center().z) / p,
