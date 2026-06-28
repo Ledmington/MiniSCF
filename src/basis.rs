@@ -4,7 +4,7 @@ use ndarray::Array2;
 use ndarray::Array4;
 use std::{f64::consts::PI, sync::Arc};
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct PrimitiveGaussian {
     contraction_coefficient: f64, // already includes normalization
     alpha: f64,
@@ -61,6 +61,7 @@ fn double_factorial(n: i32) -> i32 {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct BasisSet {
     pub(crate) shells: Vec<Arc<Shell>>,
     pub(crate) functions: Vec<BasisFunction>,
@@ -127,7 +128,11 @@ impl BasisSet {
         let mut m = Array2::zeros((n, n));
 
         for i in 0..n {
-            for j in 0..=i {
+            m[[i, i]] = 1.0;
+        }
+
+        for i in 0..n {
+            for j in (i + 1)..n {
                 let val = f(&self.functions[i], &self.functions[j]);
                 m[[i, j]] = val;
                 m[[j, i]] = val;
@@ -178,13 +183,14 @@ pub(crate) enum AngularMomentum {
     P,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub(crate) struct Shell {
     pub(crate) center: Point,
     pub(crate) angular: AngularMomentum,
     pub(crate) primitives: Vec<PrimitiveGaussian>,
 }
 
+#[derive(Debug)]
 pub(crate) struct BasisFunction {
     pub(crate) shell: Arc<Shell>,
     pub(crate) component: u8, // 0=s, 0..2 for p
@@ -215,5 +221,72 @@ impl BasisFunction {
         };
 
         gaussian * angular
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn self_overlap_s() {
+        let center = Point {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let shell = Shell {
+            center,
+            angular: AngularMomentum::S,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1543289673, 3.425250914, center, (0, 0, 0)),
+                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center, (0, 0, 0)),
+                PrimitiveGaussian::new(0.4446345422, 0.168855404, center, (0, 0, 0)),
+            ],
+        };
+        let bf = BasisFunction {
+            shell: Arc::new(shell),
+            component: 0,
+        };
+        let actual_overlap = integrals::overlap(&bf, &bf);
+        let expected_overlap = 1.0;
+        assert!(
+            (actual_overlap - expected_overlap).abs() < 1e-10,
+            "Expected overlap between {:?} and itself to be {} but was {}.",
+            bf,
+            expected_overlap,
+            actual_overlap
+        );
+    }
+
+    #[test]
+    fn self_overlap_p() {
+        let center = Point {
+            x: 0.0,
+            y: 0.0,
+            z: 0.0,
+        };
+        let shell = Shell {
+            center,
+            angular: AngularMomentum::P,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1559162750, 2.941249355, center, (1, 0, 0)),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (0, 1, 0)),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center, (0, 0, 1)),
+            ],
+        };
+        let bf = BasisFunction {
+            shell: Arc::new(shell),
+            component: 0,
+        };
+        let actual_overlap = integrals::overlap(&bf, &bf);
+        let expected_overlap = 1.0;
+        assert!(
+            (actual_overlap - expected_overlap).abs() < 1e-10,
+            "Expected overlap between {:?} and itself to be {} but was {}.",
+            bf,
+            expected_overlap,
+            actual_overlap
+        );
     }
 }
