@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "xyz",
     "scf_sim",
 ]
 resolver = "3"
