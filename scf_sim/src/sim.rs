@@ -115,13 +115,17 @@ fn setup_rhf_simulation(
 ) -> (Array2<f64>, Array4<f64>) {
     let n = basis.num_contracted_gaussians();
 
-    let s = basis.overlap_matrix();
+    let mut s = basis.overlap_matrix();
     let t = basis.kinetic_energy_matrix();
     let v = basis.nuclear_attraction_matrix();
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {
         assert!(approx_eq(s[[i, i]], 1.0, 1e-6), "S[{i},{i}] != 1");
+    }
+    // Force diagonal entries of S to be exactly 1
+    for i in 0..n {
+        s[[i, i]] = 1.0;
     }
     assert_symmetric(&s, 1e-6);
     assert_symmetric(&t, 1e-6);
@@ -131,8 +135,40 @@ fn setup_rhf_simulation(
 
     assert_symmetric(h, 1e-6);
 
-    let eri = basis.electron_repulsion_tensor();
+    // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
+    let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
 
+    // for e in eigenvalues.iter_mut() {
+    //     if *e < 0.0 && e.abs() < 1e-10 {
+    //         // *e = 0.0;
+    //         *e = e.abs();
+    //     }
+    // }
+
+    // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
+    let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
+
+    *x = u.dot(&d_inv_sqrt).dot(&u.t());
+
+    // X must be symmetric
+    assert_symmetric(x, 1e-6);
+
+    // X^T * S * X must equal the identity (canonical orthogonalization check)
+    let should_be_identity = x.t().dot(&s).dot(x);
+    println!("{should_be_identity:?}");
+    assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
+
+    // H' = X^T * H * X
+    let h_prime = x.t().dot(h).dot(x);
+
+    // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
+    assert_symmetric(&h_prime, 1e-6);
+
+    let (_epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
+
+    let c = x.dot(&c_prime);
+
+    let eri = basis.electron_repulsion_tensor();
     for a in 0..n {
         for b in 0..n {
             for c in 0..n {
@@ -155,31 +191,7 @@ fn setup_rhf_simulation(
         }
     }
 
-    // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
-    let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
-
-    // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
-    let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
-
-    *x = u.dot(&d_inv_sqrt).dot(&u.t());
-
-    // X must be symmetric
-    assert_symmetric(x, 1e-6);
-
-    // X^T * S * X must equal the identity (canonical orthogonalization check)
-    let should_be_identity = x.t().dot(&s).dot(x);
-    assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
-
-    // H' = X^T * H * X
-    let h_prime = x.t().dot(h).dot(x);
-
-    // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
-    assert_symmetric(&h_prime, 1e-6);
-
-    let (_epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
-
-    // C = X * C'
-    (x.dot(&c_prime), eri)
+    (c, eri)
 }
 
 pub(crate) fn run_rhf_simulation(
