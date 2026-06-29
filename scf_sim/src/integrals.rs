@@ -146,14 +146,74 @@ fn primitive_kinetic_energy(
     -0.5 * value
 }
 
+fn nuclear_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64, v_ss: f64) -> f64 {
+    fn e(i: i32, j: i32, t: i32, pa: f64, pb: f64, p: f64, v_ss: f64) -> f64 {
+        if t < 0 || t > i + j {
+            return 0.0;
+        }
+
+        if i == 0 && j == 0 {
+            return if t == 0 { v_ss } else { 0.0 };
+        }
+
+        if i > 0 {
+            return pa * e(i - 1, j, t, pa, pb, p, v_ss)
+                + (1.0 / (2.0 * p)) * e(i - 1, j, t - 1, pa, pb, p, v_ss)
+                + ((t + 1) as f64) * e(i - 1, j, t + 1, pa, pb, p, v_ss);
+        }
+
+        pb * e(i, j - 1, t, pa, pb, p, v_ss)
+            + (1.0 / (2.0 * p)) * e(i, j - 1, t - 1, pa, pb, p, v_ss)
+            + ((t + 1) as f64) * e(i, j - 1, t + 1, pa, pb, p, v_ss)
+    }
+
+    e(ia as i32, ib as i32, 0, pa, pb, p, v_ss)
+}
+
 fn primitive_nuclear_attraction(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
-    _angular_momentum_a: &(u8, u8, u8),
-    _angular_momentum_b: &(u8, u8, u8),
+    angular_momentum_a: &(u8, u8, u8),
+    angular_momentum_b: &(u8, u8, u8),
 ) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r2))
+
+    let center = weighted_center(a, b, p);
+
+    // NOTE: assumes nucleus at origin
+    let r_p2 = center.norm_squared();
+
+    let v_ss = -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r_p2));
+
+    let pa = center.sub(&a.center()).coordinates();
+    let pb = center.sub(&b.center()).coordinates();
+
+    let ex = nuclear_1d(
+        angular_momentum_a.0,
+        angular_momentum_b.0,
+        pa[0],
+        pb[0],
+        p,
+        v_ss,
+    );
+    let ey = nuclear_1d(
+        angular_momentum_a.1,
+        angular_momentum_b.1,
+        pa[1],
+        pb[1],
+        p,
+        v_ss,
+    );
+    let ez = nuclear_1d(
+        angular_momentum_a.2,
+        angular_momentum_b.2,
+        pa[2],
+        pb[2],
+        p,
+        v_ss,
+    );
+
+    ex * ey * ez
 }
 
 fn primitive_eri(
