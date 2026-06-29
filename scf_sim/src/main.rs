@@ -7,13 +7,11 @@ mod integrals;
 mod sim;
 
 use crate::{
-    basis::BasisSet,
     basis_reader::{build_basis, parse_nwchem_basis},
     cube_writer::dump_all_molecular_orbitals,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
 use clap::Parser;
-use ndarray::Array2;
 use simple_logger::SimpleLogger;
 use std::time::Instant;
 use xyz::read_xyz;
@@ -45,13 +43,6 @@ struct Args {
     /// Tolerance value for the SCF density
     #[arg(long, default_value_t = 1.0e-8)]
     p_tol: f64,
-}
-
-// TODO: move this into sim.rs
-pub(crate) struct SCF {
-    pub(crate) basis: BasisSet,
-    pub(crate) n_electrons: usize,
-    pub(crate) density: Array2<f64>,
 }
 
 fn main() -> std::io::Result<()> {

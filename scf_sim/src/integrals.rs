@@ -97,8 +97,8 @@ fn primitive_overlap(
 fn primitive_kinetic_energy(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
-    angular_momentum_a: &(u8, u8, u8),
-    angular_momentum_b: &(u8, u8, u8),
+    _angular_momentum_a: &(u8, u8, u8),
+    _angular_momentum_b: &(u8, u8, u8),
 ) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
     (PI / p).powf(1.5) * (-mu * r2).exp() * mu * (3.0 - 2.0 * mu * r2)
@@ -107,8 +107,8 @@ fn primitive_kinetic_energy(
 fn primitive_nuclear_attraction(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
-    angular_momentum_a: &(u8, u8, u8),
-    angular_momentum_b: &(u8, u8, u8),
+    _angular_momentum_a: &(u8, u8, u8),
+    _angular_momentum_b: &(u8, u8, u8),
 ) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
     -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r2))

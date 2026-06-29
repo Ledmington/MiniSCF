@@ -98,20 +98,20 @@ pub fn normalize_xyz(atoms: &mut [Atom]) {
             let phi = f64::atan2(atoms[1].position.y, atoms[1].position.x);
             let cos_phi = phi.cos();
             let sin_phi = phi.sin();
-            for i in 1..n {
-                let x = atoms[i].position.x;
-                let y = atoms[i].position.y;
-                atoms[i].position.x = x * cos_phi + y * sin_phi;
-                atoms[i].position.y = -x * sin_phi + y * cos_phi;
+            for a in atoms.iter_mut().take(n).skip(1) {
+                let x = a.position.x;
+                let y = a.position.y;
+                a.position.x = x * cos_phi + y * sin_phi;
+                a.position.y = -x * sin_phi + y * cos_phi;
             }
             let psi = f64::atan2(atoms[1].position.z, p);
             let cos_psi = psi.cos();
             let sin_psi = psi.sin();
-            for i in 1..n {
-                let x = atoms[i].position.x;
-                let z = atoms[i].position.z;
-                atoms[i].position.x = x * cos_psi + z * sin_psi;
-                atoms[i].position.z = -x * sin_psi + z * cos_psi;
+            for a in atoms.iter_mut().take(n).skip(1) {
+                let x = a.position.x;
+                let z = a.position.z;
+                a.position.x = x * cos_psi + z * sin_psi;
+                a.position.z = -x * sin_psi + z * cos_psi;
             }
 
             if n >= 3 {
@@ -119,11 +119,11 @@ pub fn normalize_xyz(atoms: &mut [Atom]) {
                 let theta = -f64::atan2(atoms[2].position.z, atoms[2].position.y);
                 let cos_theta = theta.cos();
                 let sin_theta = theta.sin();
-                for i in 2..n {
-                    let y = atoms[i].position.y;
-                    let z = atoms[i].position.z;
-                    atoms[i].position.y = y * cos_theta - z * sin_theta;
-                    atoms[i].position.z = y * sin_theta + z * cos_theta;
+                for a in atoms.iter_mut().take(n).skip(2) {
+                    let y = a.position.y;
+                    let z = a.position.z;
+                    a.position.y = y * cos_theta - z * sin_theta;
+                    a.position.z = y * sin_theta + z * cos_theta;
                 }
             }
         }
