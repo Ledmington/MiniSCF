@@ -90,10 +90,6 @@ fn main() -> std::io::Result<()> {
 
     let basis = build_basis(&input_file.atoms, &basis_library);
 
-    log::info!("basis: {:#?}", basis);
-    log::info!("{} basis functions", basis.functions.len());
-    log::info!("{} shells", basis.shells.len());
-
     let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
 
     let c = run_rhf_simulation(&input_file.atoms, &basis, &opt_params);
