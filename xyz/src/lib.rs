@@ -77,6 +77,7 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
     Ok(XYZFile { comment, atoms })
 }
 
+// TODO: rewrite using BLAS?
 pub fn normalize_xyz(atoms: &mut [Atom]) {
     let n = atoms.len();
 
@@ -122,6 +123,69 @@ pub fn normalize_xyz(atoms: &mut [Atom]) {
                 let z = atoms[i].position.z;
                 atoms[i].position.y = y * cos_theta - z * sin_theta;
                 atoms[i].position.z = y * sin_theta + z * cos_theta;
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashMap;
+
+    use rand::RngExt;
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(0)]
+    #[case(1)]
+    #[case(2)]
+    #[case(3)]
+    #[case(4)]
+    #[case(5)]
+    #[case(10)]
+    fn xyz_normalization(#[case] n: usize) {
+        let mut rng = rand::rng();
+        let points = (0..n)
+            .map(|_| Point {
+                x: rng.random_range(-10.0..10.0),
+                y: rng.random_range(-10.0..10.0),
+                z: rng.random_range(-10.0..10.0),
+            })
+            .collect::<Vec<Point>>();
+        let mut atoms = points
+            .iter()
+            .map(|p| Atom {
+                symbol: "C".to_string(),
+                position: *p,
+                charge: 6,
+            })
+            .collect::<Vec<Atom>>();
+        let mut original_distances: HashMap<(usize, usize), f64> = HashMap::new();
+        for i in 0..n {
+            for j in (i + 1)..n {
+                original_distances.insert((i, j), points[i].distance(&points[j]));
+            }
+        }
+
+        normalize_xyz(&mut atoms);
+
+        assert_eq!(n, atoms.len());
+        assert!((atoms[0].position.x - 0.0).abs() < 1e-12);
+        assert!((atoms[0].position.y - 0.0).abs() < 1e-12);
+        assert!((atoms[0].position.z - 0.0).abs() < 1e-12);
+        assert!((atoms[1].position.y - 0.0).abs() < 1e-12);
+        assert!((atoms[1].position.z - 0.0).abs() < 1e-12);
+        assert!((atoms[2].position.z - 0.0).abs() < 1e-12);
+        for i in 0..n {
+            for j in (i + 1)..n {
+                assert!(
+                    (atoms[i].position.distance(&atoms[j].position)
+                        - *original_distances.get(&(i, j)).unwrap())
+                    .abs()
+                        < 1e-12
+                );
             }
         }
     }

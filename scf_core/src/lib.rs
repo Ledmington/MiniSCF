@@ -20,6 +20,13 @@ impl Point {
     pub fn norm_squared(&self) -> f64 {
         self.x.powi(2) + self.y.powi(2) + self.z.powi(2)
     }
+
+    pub fn norm(&self) -> f64 {
+        self.norm_squared().sqrt()
+    }
+    pub fn distance(&self, p: &Point) -> f64 {
+        self.sub(p).norm()
+    }
 }
 
 #[derive(Clone)]
