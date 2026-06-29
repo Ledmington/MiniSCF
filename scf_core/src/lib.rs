@@ -41,6 +41,12 @@ pub fn atomic_number(symbol: &str) -> Result<u8, String> {
         "O" => Ok(8),
         "F" => Ok(9),
         "Ne" => Ok(10),
+        "Na" => Ok(11),
+        "Mg" => Ok(12),
+        "Al" => Ok(13),
+        "Si" => Ok(14),
+        "P" => Ok(15),
+        "S" => Ok(16),
         _ => Err(format!("unknown element: {}", symbol)),
     }
 }

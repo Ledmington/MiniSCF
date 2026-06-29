@@ -1,0 +1,13 @@
+[package]
+name = "internal_crd"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+scf_core = { path = "../scf_core" }
+xyz = { path = "../xyz" }
+log = "0.4.33"
+simple_logger = "5.2.0"
+clap = { version = "4.6.1", features = ["derive"] }
+
+[dev-dependencies]

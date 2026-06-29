@@ -2,6 +2,7 @@
 members = [
     "scf_core",
     "xyz",
+    "internal_crd",
     "scf_sim",
 ]
 resolver = "3"

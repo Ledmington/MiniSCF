@@ -120,9 +120,9 @@ fn setup_rhf_simulation(
     let v = basis.nuclear_attraction_matrix();
 
     // println!("{s:?}");
-    // println!("{:?}", s[[0, 0]]);
-    // println!("{:?}", s[[1, 1]]);
-    // println!("{:?}", s[[2, 2]]);
+    println!("{:?}", s[[0, 0]]);
+    println!("{:?}", s[[1, 1]]);
+    println!("{:?}", s[[2, 2]]);
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {

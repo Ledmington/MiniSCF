@@ -61,7 +61,7 @@ fn main() -> std::io::Result<()> {
 
     let args = Args::parse();
 
-    let atoms = read_xyz(&args.input_xyz).unwrap_or_else(|err| {
+    let input_file = read_xyz(&args.input_xyz).unwrap_or_else(|err| {
         panic!(
             "Could not read input file '{}' because:\n{}.",
             args.input_xyz, err
@@ -69,7 +69,7 @@ fn main() -> std::io::Result<()> {
     });
 
     log::info!(" ### Input system ### ");
-    for atom in atoms.iter() {
+    for atom in input_file.atoms.iter() {
         log::info!(
             " {} {} {} {} {}",
             atom.symbol,
@@ -88,7 +88,7 @@ fn main() -> std::io::Result<()> {
         )
     });
 
-    let basis = build_basis(&atoms, &basis_library);
+    let basis = build_basis(&input_file.atoms, &basis_library);
 
     log::info!("basis: {:#?}", basis);
     log::info!("{} basis functions", basis.functions.len());
@@ -96,9 +96,9 @@ fn main() -> std::io::Result<()> {
 
     let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
 
-    let c = run_rhf_simulation(&atoms, &basis, &opt_params);
+    let c = run_rhf_simulation(&input_file.atoms, &basis, &opt_params);
 
-    dump_all_molecular_orbitals(&atoms, &basis, &c, args.output_prefix)?;
+    dump_all_molecular_orbitals(&input_file.atoms, &basis, &c, args.output_prefix)?;
 
     log::info!("All done!");
 

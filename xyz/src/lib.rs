@@ -5,7 +5,12 @@ use std::{
     time::Instant,
 };
 
-pub fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
+pub struct XYZFile {
+    pub comment: String,
+    pub atoms: Vec<Atom>,
+}
+
+pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
     let beginning = Instant::now();
     log::info!("Started reading input system from file '{path}'");
 
@@ -22,7 +27,7 @@ pub fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
         .map_err(|e| format!("invalid atom count: {}", e))?;
 
     // comment line
-    lines
+    let comment = lines
         .next()
         .ok_or("missing comment line")?
         .map_err(|e| e.to_string())?;
@@ -67,5 +72,5 @@ pub fn read_xyz(path: &str) -> Result<Vec<Atom>, String> {
         log::info!("Completed reading input system from file '{path}' in {elapsed:?}");
     }
 
-    Ok(atoms)
+    Ok(XYZFile { comment, atoms })
 }

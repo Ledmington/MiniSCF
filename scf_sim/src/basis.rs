@@ -99,7 +99,6 @@ impl BasisSet {
         self.shells.len()
     }
 
-    // TODO: is this needed?
     pub(crate) fn num_occupied_orbitals(&self, n_electrons: usize) -> usize {
         n_electrons / 2
     }
@@ -128,7 +127,7 @@ impl BasisSet {
         let mut m = Array2::zeros((n, n));
 
         for i in 0..n {
-            m[[i, i]] = 1.0;
+            m[[i, i]] = f(&self.functions[i], &self.functions[i]);
         }
 
         for i in 0..n {
