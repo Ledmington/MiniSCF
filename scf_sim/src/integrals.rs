@@ -60,7 +60,31 @@ fn contracted_pair(
 
 fn primitive_overlap(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
-    (PI / p).powf(1.5) * (-mu * r2).exp()
+    let center = weighted_center(a, b, p);
+    let pa = center.sub(&a.center()).coordinates();
+    let pb = center.sub(&b.center()).coordinates();
+
+    let e = |coord_idx, i, j| {
+        (match (i, j) {
+            // s-s
+            (0, 0) => 1.0,
+
+            // s(A)-p(B)
+            (0, 1) => pb[coord_idx],
+            // p(A)-s(B)
+            (1, 0) => pa[coord_idx],
+
+            // p-p
+            (1, 1) => 1.0 / (2.0 * p) + pa[coord_idx] * pb[coord_idx],
+
+            _ => panic!("Don't know what to do when (i,j) = ({i}, {j})"),
+        }) * (PI / p).sqrt()
+    };
+
+    let ex = e(0, a.angular_momentum().0, b.angular_momentum().0);
+    let ey = e(1, a.angular_momentum().1, b.angular_momentum().1);
+    let ez = e(2, a.angular_momentum().2, b.angular_momentum().2);
+    ex * ey * ez * (-mu * r2).exp()
 }
 
 fn primitive_kinetic_energy(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
@@ -104,7 +128,7 @@ fn primitive_eri(
 /// Returns (p, μ, |R_A - R_B|²) for a primitive pair.
 fn gaussian_pair_params(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> (f64, f64, f64) {
     let p = a.alpha() + b.alpha();
-    let mu = a.alpha() * b.alpha() / p;
+    let mu = (a.alpha() * b.alpha()) / p;
     let r2 = a.center().sub(&b.center()).norm_squared();
     (p, mu, r2)
 }

@@ -24,8 +24,13 @@ impl Point {
     pub fn norm(&self) -> f64 {
         self.norm_squared().sqrt()
     }
+
     pub fn distance(&self, p: &Point) -> f64 {
         self.sub(p).norm()
+    }
+
+    pub fn coordinates(&self) -> [f64; 3] {
+        [self.x, self.y, self.z]
     }
 }
 

@@ -9,7 +9,7 @@ pub(crate) struct PrimitiveGaussian {
     contraction_coefficient: f64, // already includes normalization
     alpha: f64,
     center: Point,
-    angular: (u8, u8, u8), // (lx, ly, lz)
+    angular_momentum: (u8, u8, u8), // (lx, ly, lz)
 }
 
 impl PrimitiveGaussian {
@@ -17,14 +17,14 @@ impl PrimitiveGaussian {
         contraction_coefficient: f64,
         alpha: f64,
         center: Point,
-        angular: (u8, u8, u8),
+        angular_momentum: (u8, u8, u8),
     ) -> Self {
         PrimitiveGaussian {
             contraction_coefficient: contraction_coefficient
-                * get_normalization_coefficient(alpha, angular),
+                * get_normalization_coefficient(alpha, angular_momentum),
             alpha,
             center,
-            angular,
+            angular_momentum,
         }
     }
 
@@ -39,26 +39,33 @@ impl PrimitiveGaussian {
     pub(crate) fn center(&self) -> Point {
         self.center
     }
+
+    pub(crate) fn angular_momentum(&self) -> (u8, u8, u8) {
+        self.angular_momentum
+    }
 }
 
 fn get_normalization_coefficient(alpha: f64, (lx, ly, lz): (u8, u8, u8)) -> f64 {
-    let l = (lx + ly + lz) as i32;
-
-    let numerator = (2.0 * alpha / PI).powf(1.5) * (4.0 * alpha).powi(l);
+    let numerator = (4.0 * alpha).powi((lx + ly + lz).into());
 
     let denominator = double_factorial(2 * lx as i32 - 1)
         * double_factorial(2 * ly as i32 - 1)
         * double_factorial(2 * lz as i32 - 1);
 
-    (numerator / denominator as f64).sqrt()
+    ((2.0 * alpha) / PI).powf(0.75) * (numerator / (denominator as f64)).sqrt()
 }
 
-fn double_factorial(n: i32) -> i32 {
-    if n <= 0 {
-        1
-    } else {
-        (1..=n).rev().step_by(2).product()
+fn double_factorial(mut n: i32) -> i32 {
+    assert!(n >= -1);
+    if n <= 1 {
+        return 1;
     }
+    let mut s = 1;
+    while n > 1 {
+        s *= n;
+        n -= 2;
+    }
+    s
 }
 
 #[derive(Debug)]
