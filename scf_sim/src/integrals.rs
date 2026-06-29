@@ -38,8 +38,7 @@ pub(crate) fn electron_repulsion(
     sum
 }
 
-// ------ contracted helper -----------------------------------------------
-
+/// Contracted helper
 fn contracted_pair(
     a: &BasisFunction,
     b: &BasisFunction,
@@ -58,7 +57,30 @@ fn contracted_pair(
     sum
 }
 
-// ------ primitive integrals ---------------------------------------------
+/// McMurchie-Davidson recurrence
+fn overlap_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> f64 {
+    fn e(i: i32, j: i32, t: i32, pa: f64, pb: f64, p: f64) -> f64 {
+        if t < 0 || t > i + j {
+            return 0.0;
+        }
+
+        if i == 0 && j == 0 {
+            return if t == 0 { 1.0 } else { 0.0 };
+        }
+
+        if i > 0 {
+            return pa * e(i - 1, j, t, pa, pb, p)
+                + (1.0 / (2.0 * p)) * e(i - 1, j, t - 1, pa, pb, p)
+                + ((t + 1) as f64) * e(i - 1, j, t + 1, pa, pb, p);
+        }
+
+        pb * e(i, j - 1, t, pa, pb, p)
+            + (1.0 / (2.0 * p)) * e(i, j - 1, t - 1, pa, pb, p)
+            + ((t + 1) as f64) * e(i, j - 1, t + 1, pa, pb, p)
+    }
+
+    (PI / p).sqrt() * e(ia as i32, ib as i32, 0, pa, pb, p)
+}
 
 fn primitive_overlap(
     a: &PrimitiveGaussian,
@@ -71,37 +93,57 @@ fn primitive_overlap(
     let pa = center.sub(&a.center()).coordinates();
     let pb = center.sub(&b.center()).coordinates();
 
-    let e = |coord_idx, i, j| {
-        (match (i, j) {
-            // s-s
-            (0, 0) => 1.0,
-
-            // s(A)-p(B)
-            (0, 1) => pb[coord_idx],
-            // p(A)-s(B)
-            (1, 0) => pa[coord_idx],
-
-            // p-p
-            (1, 1) => 1.0 / (2.0 * p) + pa[coord_idx] * pb[coord_idx],
-
-            _ => panic!("Don't know what to do when (i,j) = ({i}, {j})"),
-        }) * (PI / p).sqrt()
-    };
-
-    let ex = e(0, angular_momentum_a.0, angular_momentum_b.0);
-    let ey = e(1, angular_momentum_a.1, angular_momentum_b.1);
-    let ez = e(2, angular_momentum_a.2, angular_momentum_b.2);
+    let ex = overlap_1d(angular_momentum_a.0, angular_momentum_b.0, pa[0], pb[0], p);
+    let ey = overlap_1d(angular_momentum_a.1, angular_momentum_b.1, pa[1], pb[1], p);
+    let ez = overlap_1d(angular_momentum_a.2, angular_momentum_b.2, pa[2], pb[2], p);
     ex * ey * ez * (-mu * r2).exp()
+}
+
+fn shift(l: &(u8, u8, u8), axis: usize, delta: i8) -> Option<(u8, u8, u8)> {
+    let mut out = [l.0 as i16, l.1 as i16, l.2 as i16];
+    out[axis] += delta as i16;
+
+    if out.iter().any(|&x| x < 0) {
+        return None;
+    }
+
+    Some((out[0] as u8, out[1] as u8, out[2] as u8))
 }
 
 fn primitive_kinetic_energy(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
-    _angular_momentum_a: &(u8, u8, u8),
-    _angular_momentum_b: &(u8, u8, u8),
+    la: &(u8, u8, u8),
+    lb: &(u8, u8, u8),
 ) -> f64 {
-    let (p, mu, r2) = gaussian_pair_params(a, b);
-    (PI / p).powf(1.5) * (-mu * r2).exp() * mu * (3.0 - 2.0 * mu * r2)
+    let beta = b.alpha();
+
+    let mut value = 0.0;
+
+    for axis in 0..3 {
+        let l = match axis {
+            0 => lb.0,
+            1 => lb.1,
+            _ => lb.2,
+        } as f64;
+
+        // j(j-1) S(j-2)
+        if l >= 2.0 {
+            if let Some(lb2) = shift(lb, axis, -2) {
+                value += l * (l - 1.0) * primitive_overlap(a, b, la, &lb2);
+            }
+        }
+
+        // -2β(2j+1) S(j)
+        value += -2.0 * beta * (2.0 * l + 1.0) * primitive_overlap(a, b, la, lb);
+
+        // 4β² S(j+2)
+        if let Some(lb2) = shift(lb, axis, 2) {
+            value += 4.0 * beta * beta * primitive_overlap(a, b, la, &lb2);
+        }
+    }
+
+    -0.5 * value
 }
 
 fn primitive_nuclear_attraction(
@@ -139,8 +181,6 @@ fn primitive_eri(
         * (-v * r_cd_2).exp()
         * boys_0(t)
 }
-
-// ------ shared geometry helpers -----------------------------------------
 
 /// Returns (p, μ, |R_A - R_B|²) for a primitive pair.
 fn gaussian_pair_params(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> (f64, f64, f64) {
