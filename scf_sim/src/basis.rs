@@ -106,7 +106,8 @@ impl BasisSet {
     }
 
     pub(crate) fn num_contracted_gaussians(&self) -> usize {
-        self.shells.len()
+        // self.shells.len()
+        self.functions.len()
     }
 
     pub(crate) fn num_occupied_orbitals(&self, n_electrons: usize) -> usize {
