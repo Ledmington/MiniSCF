@@ -81,48 +81,50 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
 pub fn normalize_xyz(atoms: &mut [Atom]) {
     let n = atoms.len();
 
-    // First atom becomes the origin
-    for i in 1..n {
-        atoms[i].position.x -= atoms[0].position.x;
-        atoms[i].position.y -= atoms[0].position.y;
-        atoms[i].position.z -= atoms[0].position.z;
-    }
-    atoms[0].position.x = 0.0;
-    atoms[0].position.y = 0.0;
-    atoms[0].position.z = 0.0;
-
-    if n >= 2 {
-        // Rotate first around the z axis, then around the y axis, so that the second atom lies on the x axis
-        let p = (atoms[1].position.x.powi(2) + atoms[1].position.y.powi(2)).sqrt();
-        let phi = f64::atan2(atoms[1].position.y, atoms[1].position.x);
-        let cos_phi = phi.cos();
-        let sin_phi = phi.sin();
+    if n >= 1 {
+        // First atom becomes the origin
         for i in 1..n {
-            let x = atoms[i].position.x;
-            let y = atoms[i].position.y;
-            atoms[i].position.x = x * cos_phi + y * sin_phi;
-            atoms[i].position.y = -x * sin_phi + y * cos_phi;
+            atoms[i].position.x -= atoms[0].position.x;
+            atoms[i].position.y -= atoms[0].position.y;
+            atoms[i].position.z -= atoms[0].position.z;
         }
-        let psi = f64::atan2(atoms[1].position.z, p);
-        let cos_psi = psi.cos();
-        let sin_psi = psi.sin();
-        for i in 1..n {
-            let x = atoms[i].position.x;
-            let z = atoms[i].position.z;
-            atoms[i].position.x = x * cos_psi + z * sin_psi;
-            atoms[i].position.z = -x * sin_psi + z * cos_psi;
-        }
+        atoms[0].position.x = 0.0;
+        atoms[0].position.y = 0.0;
+        atoms[0].position.z = 0.0;
 
-        if n >= 3 {
-            // Rotate around x axis in order to have third atom on the xy plane
-            let theta = -f64::atan2(atoms[2].position.z, atoms[2].position.y);
-            let cos_theta = theta.cos();
-            let sin_theta = theta.sin();
-            for i in 2..n {
+        if n >= 2 {
+            // Rotate first around the z axis, then around the y axis, so that the second atom lies on the x axis
+            let p = (atoms[1].position.x.powi(2) + atoms[1].position.y.powi(2)).sqrt();
+            let phi = f64::atan2(atoms[1].position.y, atoms[1].position.x);
+            let cos_phi = phi.cos();
+            let sin_phi = phi.sin();
+            for i in 1..n {
+                let x = atoms[i].position.x;
                 let y = atoms[i].position.y;
+                atoms[i].position.x = x * cos_phi + y * sin_phi;
+                atoms[i].position.y = -x * sin_phi + y * cos_phi;
+            }
+            let psi = f64::atan2(atoms[1].position.z, p);
+            let cos_psi = psi.cos();
+            let sin_psi = psi.sin();
+            for i in 1..n {
+                let x = atoms[i].position.x;
                 let z = atoms[i].position.z;
-                atoms[i].position.y = y * cos_theta - z * sin_theta;
-                atoms[i].position.z = y * sin_theta + z * cos_theta;
+                atoms[i].position.x = x * cos_psi + z * sin_psi;
+                atoms[i].position.z = -x * sin_psi + z * cos_psi;
+            }
+
+            if n >= 3 {
+                // Rotate around x axis in order to have third atom on the xy plane
+                let theta = -f64::atan2(atoms[2].position.z, atoms[2].position.y);
+                let cos_theta = theta.cos();
+                let sin_theta = theta.sin();
+                for i in 2..n {
+                    let y = atoms[i].position.y;
+                    let z = atoms[i].position.z;
+                    atoms[i].position.y = y * cos_theta - z * sin_theta;
+                    atoms[i].position.z = y * sin_theta + z * cos_theta;
+                }
             }
         }
     }
@@ -172,12 +174,18 @@ mod tests {
         normalize_xyz(&mut atoms);
 
         assert_eq!(n, atoms.len());
-        assert!((atoms[0].position.x - 0.0).abs() < 1e-12);
-        assert!((atoms[0].position.y - 0.0).abs() < 1e-12);
-        assert!((atoms[0].position.z - 0.0).abs() < 1e-12);
-        assert!((atoms[1].position.y - 0.0).abs() < 1e-12);
-        assert!((atoms[1].position.z - 0.0).abs() < 1e-12);
-        assert!((atoms[2].position.z - 0.0).abs() < 1e-12);
+        if n >= 1 {
+            assert!((atoms[0].position.x - 0.0).abs() < 1e-12);
+            assert!((atoms[0].position.y - 0.0).abs() < 1e-12);
+            assert!((atoms[0].position.z - 0.0).abs() < 1e-12);
+            if n >= 2 {
+                assert!((atoms[1].position.y - 0.0).abs() < 1e-12);
+                assert!((atoms[1].position.z - 0.0).abs() < 1e-12);
+                if n >= 3 {
+                    assert!((atoms[2].position.z - 0.0).abs() < 1e-12);
+                }
+            }
+        }
         for i in 0..n {
             for j in (i + 1)..n {
                 assert!(
