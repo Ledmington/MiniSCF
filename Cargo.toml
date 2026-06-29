@@ -6,3 +6,17 @@ members = [
     "scf_sim",
 ]
 resolver = "3"
+
+[profile.dev]
+opt-level = 0
+debug-assertions = true
+incremental = true
+panic = "unwind"
+debug = "full"
+
+[profile.release]
+opt-level = 3
+debug-assertions = false
+incremental = false
+panic = "abort"
+debug = "none"
