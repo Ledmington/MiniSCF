@@ -31,30 +31,34 @@ fn normalize_xyz(atoms: &mut [Atom]) {
     atoms[0].position.y = 0.0;
     atoms[0].position.z = 0.0;
 
-    // Rotate first around the z axis, then around the y axis, so that the second atom lies on the x axis
-    let p = (atoms[1].position.x.powi(2) + atoms[1].position.y.powi(2)).sqrt();
-    let phi = f64::atan2(atoms[1].position.y, atoms[1].position.x);
-    for i in 1..n {
-        let x = atoms[i].position.x;
-        let y = atoms[i].position.y;
-        atoms[i].position.x = x * phi.cos() + y * phi.sin();
-        atoms[i].position.y = -x * phi.sin() + y * phi.cos();
-    }
-    let psi = f64::atan2(atoms[1].position.z, p);
-    for i in 1..n {
-        let x = atoms[i].position.x;
-        let z = atoms[i].position.z;
-        atoms[i].position.x = x * psi.cos() + z * psi.sin();
-        atoms[i].position.z = -x * psi.sin() + z * psi.cos();
-    }
+    if n >= 2 {
+        // Rotate first around the z axis, then around the y axis, so that the second atom lies on the x axis
+        let p = (atoms[1].position.x.powi(2) + atoms[1].position.y.powi(2)).sqrt();
+        let phi = f64::atan2(atoms[1].position.y, atoms[1].position.x);
+        for i in 1..n {
+            let x = atoms[i].position.x;
+            let y = atoms[i].position.y;
+            atoms[i].position.x = x * phi.cos() + y * phi.sin();
+            atoms[i].position.y = -x * phi.sin() + y * phi.cos();
+        }
+        let psi = f64::atan2(atoms[1].position.z, p);
+        for i in 1..n {
+            let x = atoms[i].position.x;
+            let z = atoms[i].position.z;
+            atoms[i].position.x = x * psi.cos() + z * psi.sin();
+            atoms[i].position.z = -x * psi.sin() + z * psi.cos();
+        }
 
-    // Rotate around x axis in order to have third atom on the xy plane
-    let theta = -f64::atan2(atoms[2].position.z, atoms[2].position.y);
-    for i in 2..n {
-        let y = atoms[i].position.y;
-        let z = atoms[i].position.z;
-        atoms[i].position.y = y * theta.cos() - z * theta.sin();
-        atoms[i].position.z = y * theta.sin() + z * theta.cos();
+        if n >= 3 {
+            // Rotate around x axis in order to have third atom on the xy plane
+            let theta = -f64::atan2(atoms[2].position.z, atoms[2].position.y);
+            for i in 2..n {
+                let y = atoms[i].position.y;
+                let z = atoms[i].position.z;
+                atoms[i].position.y = y * theta.cos() - z * theta.sin();
+                atoms[i].position.z = y * theta.sin() + z * theta.cos();
+            }
+        }
     }
 }
 
