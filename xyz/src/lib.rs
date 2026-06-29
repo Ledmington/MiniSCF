@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use scf_core::{Atom, Point, atomic_number};
 use std::{
     fs::File,

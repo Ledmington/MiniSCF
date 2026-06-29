@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 #[derive(Clone, Copy, Debug)]
 pub struct Point {
     // TODO: make private and use getters
