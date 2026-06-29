@@ -43,13 +43,15 @@ pub(crate) fn electron_repulsion(
 fn contracted_pair(
     a: &BasisFunction,
     b: &BasisFunction,
-    f: impl Fn(&PrimitiveGaussian, &PrimitiveGaussian) -> f64,
+    f: impl Fn(&PrimitiveGaussian, &PrimitiveGaussian, &(u8, u8, u8), &(u8, u8, u8)) -> f64,
 ) -> f64 {
     let mut sum = 0.0;
 
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
-            sum += pa.contraction_coefficient() * pb.contraction_coefficient() * f(pa, pb);
+            sum += pa.contraction_coefficient()
+                * pb.contraction_coefficient()
+                * f(pa, pb, &a.angular_momentum, &b.angular_momentum);
         }
     }
 
@@ -58,7 +60,12 @@ fn contracted_pair(
 
 // ------ primitive integrals ---------------------------------------------
 
-fn primitive_overlap(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
+fn primitive_overlap(
+    a: &PrimitiveGaussian,
+    b: &PrimitiveGaussian,
+    angular_momentum_a: &(u8, u8, u8),
+    angular_momentum_b: &(u8, u8, u8),
+) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
     let center = weighted_center(a, b, p);
     let pa = center.sub(&a.center()).coordinates();
@@ -81,18 +88,28 @@ fn primitive_overlap(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
         }) * (PI / p).sqrt()
     };
 
-    let ex = e(0, a.angular_momentum().0, b.angular_momentum().0);
-    let ey = e(1, a.angular_momentum().1, b.angular_momentum().1);
-    let ez = e(2, a.angular_momentum().2, b.angular_momentum().2);
+    let ex = e(0, angular_momentum_a.0, angular_momentum_b.0);
+    let ey = e(1, angular_momentum_a.1, angular_momentum_b.1);
+    let ez = e(2, angular_momentum_a.2, angular_momentum_b.2);
     ex * ey * ez * (-mu * r2).exp()
 }
 
-fn primitive_kinetic_energy(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
+fn primitive_kinetic_energy(
+    a: &PrimitiveGaussian,
+    b: &PrimitiveGaussian,
+    angular_momentum_a: &(u8, u8, u8),
+    angular_momentum_b: &(u8, u8, u8),
+) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
     (PI / p).powf(1.5) * (-mu * r2).exp() * mu * (3.0 - 2.0 * mu * r2)
 }
 
-fn primitive_nuclear_attraction(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> f64 {
+fn primitive_nuclear_attraction(
+    a: &PrimitiveGaussian,
+    b: &PrimitiveGaussian,
+    angular_momentum_a: &(u8, u8, u8),
+    angular_momentum_b: &(u8, u8, u8),
+) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
     -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r2))
 }

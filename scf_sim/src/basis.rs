@@ -9,7 +9,6 @@ pub(crate) struct PrimitiveGaussian {
     contraction_coefficient: f64, // already includes normalization
     alpha: f64,
     center: Point,
-    angular_momentum: (u8, u8, u8), // (lx, ly, lz)
 }
 
 impl PrimitiveGaussian {
@@ -24,7 +23,6 @@ impl PrimitiveGaussian {
                 * get_normalization_coefficient(alpha, angular_momentum),
             alpha,
             center,
-            angular_momentum,
         }
     }
 
@@ -38,10 +36,6 @@ impl PrimitiveGaussian {
 
     pub(crate) fn center(&self) -> Point {
         self.center
-    }
-
-    pub(crate) fn angular_momentum(&self) -> (u8, u8, u8) {
-        self.angular_momentum
     }
 }
 
@@ -85,16 +79,25 @@ impl BasisSet {
                 AngularMomentum::S => {
                     functions.push(BasisFunction {
                         shell: Arc::clone(shell),
-                        component: 0,
+                        angular_momentum: (0, 0, 0),
                     });
                 }
                 AngularMomentum::P => {
-                    for i in 0..3 {
-                        functions.push(BasisFunction {
-                            shell: Arc::clone(shell),
-                            component: i,
-                        });
-                    }
+                    // px
+                    functions.push(BasisFunction {
+                        shell: Arc::clone(shell),
+                        angular_momentum: (1, 0, 0),
+                    });
+                    // py
+                    functions.push(BasisFunction {
+                        shell: Arc::clone(shell),
+                        angular_momentum: (0, 1, 0),
+                    });
+                    // pz
+                    functions.push(BasisFunction {
+                        shell: Arc::clone(shell),
+                        angular_momentum: (0, 0, 1),
+                    });
                 }
             }
         }
@@ -199,7 +202,7 @@ pub(crate) struct Shell {
 #[derive(Debug)]
 pub(crate) struct BasisFunction {
     pub(crate) shell: Arc<Shell>,
-    pub(crate) component: u8, // 0=s, 0..2 for p
+    pub(crate) angular_momentum: (u8, u8, u8), // (lx, ly, lz)
 }
 
 impl BasisFunction {
@@ -218,12 +221,15 @@ impl BasisFunction {
             .map(|p| p.contraction_coefficient * (-p.alpha * r2).exp())
             .sum();
 
-        let angular = match (shell.angular.clone(), self.component) {
+        let angular = match (shell.angular.clone(), self.angular_momentum) {
             (AngularMomentum::S, _) => 1.0,
-            (AngularMomentum::P, 0) => dx,
-            (AngularMomentum::P, 1) => dy,
-            (AngularMomentum::P, 2) => dz,
-            (AngularMomentum::P, _) => unreachable!(),
+            (AngularMomentum::P, (1, 0, 0)) => dx,
+            (AngularMomentum::P, (0, 1, 0)) => dy,
+            (AngularMomentum::P, (0, 0, 1)) => dz,
+            (AngularMomentum::P, _) => panic!(
+                "Don't know what to do with angular momentum {:?} and {:?}",
+                shell.angular, self.angular_momentum
+            ),
         };
 
         gaussian * angular
@@ -252,7 +258,7 @@ mod tests {
         };
         let bf = BasisFunction {
             shell: Arc::new(shell),
-            component: 0,
+            angular_momentum: (0, 0, 0),
         };
         let actual_overlap = integrals::overlap(&bf, &bf);
         let expected_overlap = 1.0;
@@ -283,7 +289,7 @@ mod tests {
         };
         let bf = BasisFunction {
             shell: Arc::new(shell),
-            component: 0,
+            angular_momentum: (1, 0, 0), // FIXME; add also py and pz
         };
         let actual_overlap = integrals::overlap(&bf, &bf);
         let expected_overlap = 1.0;
