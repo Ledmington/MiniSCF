@@ -30,7 +30,16 @@ pub(crate) fn electron_repulsion(
                         * prim_b.contraction_coefficient()
                         * prim_c.contraction_coefficient()
                         * prim_d.contraction_coefficient()
-                        * primitive_eri(prim_a, prim_b, prim_c, prim_d);
+                        * primitive_eri(
+                            prim_a,
+                            prim_b,
+                            prim_c,
+                            prim_d,
+                            &a.angular_momentum,
+                            &b.angular_momentum,
+                            &c.angular_momentum,
+                            &d.angular_momentum,
+                        );
                 }
             }
         }
@@ -57,9 +66,118 @@ fn contracted_pair(
     sum
 }
 
-/// McMurchie-Davidson recurrence
-fn overlap_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> f64 {
-    fn e(i: i32, j: i32, t: i32, pa: f64, pb: f64, p: f64) -> f64 {
+struct RCoulomb {
+    data: Vec<Vec<Vec<Vec<f64>>>>,
+}
+
+impl RCoulomb {
+    fn new(
+        max_n: usize,
+        max_t: usize,
+        max_u: usize,
+        max_v: usize,
+        rho: f64,
+        t: f64,
+        px: f64,
+        py: f64,
+        pz: f64,
+    ) -> Self {
+        let mut data = vec![vec![vec![vec![0.0; max_v + 1]; max_u + 1]; max_t + 1]; max_n + 2];
+
+        //
+        // Base:
+        //
+        // R^n_000 = (-2rho)^n F_n(T)
+        //
+        for n in 0..=max_n + 1 {
+            data[n][0][0][0] = (-2.0 * rho).powi(n as i32) * boys(n, t);
+        }
+
+        //
+        // Build R^n_{tuv}
+        //
+        for n in (0..=max_n).rev() {
+            for tx in 0..=max_t {
+                for ty in 0..=max_u {
+                    for tz in 0..=max_v {
+                        if tx == 0 && ty == 0 && tz == 0 {
+                            continue;
+                        }
+
+                        let value = if tx > 0 {
+                            //
+                            // R^n_{tuv}
+                            // from x recursion
+                            //
+                            let mut v = px * data[n + 1][tx - 1][ty][tz];
+
+                            if tx > 1 {
+                                v += (tx - 1) as f64 * data[n + 1][tx - 2][ty][tz];
+                            }
+
+                            v
+                        } else if ty > 0 {
+                            let mut v = py * data[n + 1][tx][ty - 1][tz];
+
+                            if ty > 1 {
+                                v += (ty - 1) as f64 * data[n + 1][tx][ty - 2][tz];
+                            }
+
+                            v
+                        } else {
+                            let mut v = pz * data[n + 1][tx][ty][tz - 1];
+
+                            if tz > 1 {
+                                v += (tz - 1) as f64 * data[n + 1][tx][ty][tz - 2];
+                            }
+
+                            v
+                        };
+
+                        data[n][tx][ty][tz] = value;
+                    }
+                }
+            }
+        }
+
+        Self { data }
+    }
+
+    fn get(&self, n: usize, t: usize, u: usize, v: usize) -> f64 {
+        self.data[n][t][u][v]
+    }
+}
+
+struct HermitePair {
+    e_x: Vec<f64>,
+    e_y: Vec<f64>,
+    e_z: Vec<f64>,
+    prefactor: f64,
+}
+
+fn hermite_pair(
+    a: &PrimitiveGaussian,
+    b: &PrimitiveGaussian,
+    la: &(u8, u8, u8),
+    lb: &(u8, u8, u8),
+) -> HermitePair {
+    let (p, mu, r2) = gaussian_pair_params(a, b);
+
+    let center = weighted_center(a, b, p);
+
+    let pa = center.sub(&a.center()).coordinates();
+    let pb = center.sub(&b.center()).coordinates();
+
+    HermitePair {
+        e_x: hermite_coefficients(la.0, lb.0, pa[0], pb[0], p),
+        e_y: hermite_coefficients(la.1, lb.1, pa[1], pb[1], p),
+        e_z: hermite_coefficients(la.2, lb.2, pa[2], pb[2], p),
+        prefactor: (-mu * r2).exp(),
+    }
+}
+
+fn hermite_coefficient(ia: u8, ib: u8, t: u8, pa: f64, pb: f64, p: f64) -> f64 {
+    fn recurse(i: i32, j: i32, t: i32, pa: f64, pb: f64, p: f64) -> f64 {
         if t < 0 || t > i + j {
             return 0.0;
         }
@@ -69,17 +187,28 @@ fn overlap_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> f64 {
         }
 
         if i > 0 {
-            return pa * e(i - 1, j, t, pa, pb, p)
-                + (1.0 / (2.0 * p)) * e(i - 1, j, t - 1, pa, pb, p)
-                + ((t + 1) as f64) * e(i - 1, j, t + 1, pa, pb, p);
+            return pa * recurse(i - 1, j, t, pa, pb, p)
+                + recurse(i - 1, j, t - 1, pa, pb, p) / (2.0 * p)
+                + (t + 1) as f64 * recurse(i - 1, j, t + 1, pa, pb, p);
         }
 
-        pb * e(i, j - 1, t, pa, pb, p)
-            + (1.0 / (2.0 * p)) * e(i, j - 1, t - 1, pa, pb, p)
-            + ((t + 1) as f64) * e(i, j - 1, t + 1, pa, pb, p)
+        pb * recurse(i, j - 1, t, pa, pb, p)
+            + recurse(i, j - 1, t - 1, pa, pb, p) / (2.0 * p)
+            + (t + 1) as f64 * recurse(i, j - 1, t + 1, pa, pb, p)
     }
 
-    (PI / p).sqrt() * e(ia as i32, ib as i32, 0, pa, pb, p)
+    recurse(ia as i32, ib as i32, t as i32, pa, pb, p)
+}
+
+fn hermite_coefficients(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> Vec<f64> {
+    (0..=ia + ib)
+        .map(|t| hermite_coefficient(ia, ib, t, pa, pb, p))
+        .collect()
+}
+
+/// McMurchie-Davidson recurrence
+fn overlap_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> f64 {
+    (PI / p).sqrt() * hermite_coefficient(ia, ib, 0, pa, pb, p)
 }
 
 fn primitive_overlap(
@@ -221,25 +350,74 @@ fn primitive_eri(
     b: &PrimitiveGaussian,
     c: &PrimitiveGaussian,
     d: &PrimitiveGaussian,
+    la: &(u8, u8, u8),
+    lb: &(u8, u8, u8),
+    lc: &(u8, u8, u8),
+    ld: &(u8, u8, u8),
 ) -> f64 {
-    let r_ab_2 = a.center().sub(&b.center()).norm_squared();
-    let r_cd_2 = c.center().sub(&d.center()).norm_squared();
     let p = a.alpha() + b.alpha();
     let q = c.alpha() + d.alpha();
-    let mu = (a.alpha() * b.alpha()) / p;
-    let v = (c.alpha() * d.alpha()) / q;
+
+    let ab = hermite_pair(a, b, la, lb);
+    let cd = hermite_pair(c, d, lc, ld);
+
     let p_center = weighted_center(a, b, p);
     let q_center = weighted_center(c, d, q);
-    let t = (p * q / (p + q)) * p_center.sub(&q_center).norm_squared();
 
-    a.contraction_coefficient()
-        * b.contraction_coefficient()
-        * c.contraction_coefficient()
-        * d.contraction_coefficient()
-        * (2.0 * PI.powf(2.5) / (p * q * (p + q).sqrt()))
-        * (-mu * r_ab_2).exp()
-        * (-v * r_cd_2).exp()
-        * boys_0(t)
+    let pq2 = p_center.sub(&q_center).norm_squared();
+
+    let rho = p * q / (p + q);
+
+    let boys_argument = rho * pq2;
+
+    //
+    // Maximum auxiliary angular momentum
+    //
+    let max_n = (la.0 + lb.0 + la.1 + lb.1 + la.2 + lb.2 + lc.0 + ld.0 + lc.1 + ld.1 + lc.2 + ld.2)
+        as usize;
+
+    let max_tx = ab.e_x.len() + cd.e_x.len() - 2;
+    let max_ty = ab.e_y.len() + cd.e_y.len() - 2;
+    let max_tz = ab.e_z.len() + cd.e_z.len() - 2;
+
+    let r = RCoulomb::new(
+        max_n,
+        max_tx,
+        max_ty,
+        max_tz,
+        rho,
+        boys_argument,
+        p_center.x - q_center.x,
+        p_center.y - q_center.y,
+        p_center.z - q_center.z,
+    );
+
+    let mut sum = 0.0;
+
+    for t in 0..ab.e_x.len() {
+        for u in 0..ab.e_y.len() {
+            for v in 0..ab.e_z.len() {
+                let e1 = ab.e_x[t] * ab.e_y[u] * ab.e_z[v];
+
+                for tau in 0..cd.e_x.len() {
+                    for nu in 0..cd.e_y.len() {
+                        for phi in 0..cd.e_z.len() {
+                            let e2 = cd.e_x[tau] * cd.e_y[nu] * cd.e_z[phi];
+
+                            sum += e1 * e2 * r.get(0, t + tau, u + nu, v + phi);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    //
+    // Overall ERI prefactor
+    //
+    let prefactor = 2.0 * PI.powf(2.5) / (p * q * (p + q).sqrt());
+
+    prefactor * ab.prefactor * cd.prefactor * sum
 }
 
 /// Returns (p, μ, |R_A - R_B|²) for a primitive pair.
@@ -278,5 +456,21 @@ fn boys_0(t: f64) -> f64 {
     if t < 1.0e-8 {
         return 1.0;
     }
+
     0.5 * (PI / t).sqrt() * erf(t.sqrt())
+}
+
+fn boys(n: usize, t: f64) -> f64 {
+    if t < 1.0e-8 {
+        // Small-T expansion
+        return 1.0 / (2 * n + 1) as f64;
+    }
+
+    let mut f = boys_0(t);
+
+    for m in 0..n {
+        f = (((2 * m + 1) as f64) * f - (-t).exp()) / (2.0 * t);
+    }
+
+    f
 }
