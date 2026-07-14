@@ -138,6 +138,18 @@ fn setup_rhf_simulation(
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
     let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
 
+    let max_eigenvalue = *eigenvalues
+        .iter()
+        .filter(|v| **v > 1e-10)
+        .reduce(|a, b| return if a > b { a } else { b })
+        .unwrap();
+    let min_eigenvalue = *eigenvalues
+        .iter()
+        .filter(|v| **v > 1e-10)
+        .reduce(|a, b| return if a < b { a } else { b })
+        .unwrap();
+    log::info!("condition number : {}", max_eigenvalue / min_eigenvalue);
+
     // for e in eigenvalues.iter_mut() {
     //     if *e < 0.0 && e.abs() < 1e-10 {
     //         // *e = 0.0;
