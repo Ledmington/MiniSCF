@@ -210,9 +210,9 @@ impl BasisFunction {
     pub(crate) fn compute(&self, r: &Point) -> f64 {
         let shell = &self.shell;
 
-        let dx = r.x - shell.center.x;
-        let dy = r.y - shell.center.y;
-        let dz = r.z - shell.center.z;
+        let dx = r.x() - shell.center.x();
+        let dy = r.y() - shell.center.y();
+        let dz = r.z() - shell.center.z();
 
         let r2 = dx * dx + dy * dy + dz * dz;
 
@@ -243,11 +243,7 @@ mod tests {
 
     #[test]
     fn self_overlap_s() {
-        let center = Point {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let center = Point::new(0.0, 0.0, 0.0);
         let shell = Shell {
             center,
             angular: AngularMomentum::S,
@@ -274,11 +270,7 @@ mod tests {
 
     #[test]
     fn self_overlap_p() {
-        let center = Point {
-            x: 0.0,
-            y: 0.0,
-            z: 0.0,
-        };
+        let center = Point::new(0.0, 0.0, 0.0);
         let shell = Shell {
             center,
             angular: AngularMomentum::P,

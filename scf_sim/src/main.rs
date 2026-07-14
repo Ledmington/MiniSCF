@@ -65,9 +65,9 @@ fn main() -> std::io::Result<()> {
             " {} {} {} {} {}",
             atom.symbol,
             atom.charge,
-            atom.position.x,
-            atom.position.y,
-            atom.position.z
+            atom.position.x(),
+            atom.position.y(),
+            atom.position.z()
         );
     }
     log::info!(" ### Input system ### ");

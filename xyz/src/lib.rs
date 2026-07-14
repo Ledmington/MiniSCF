@@ -65,7 +65,7 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
         atoms.push(Atom {
             charge: atomic_number(&symbol)?,
             symbol,
-            position: Point { x, y, z },
+            position: Point::new(x, y, z),
         });
     }
 
@@ -84,46 +84,44 @@ pub fn normalize_xyz(atoms: &mut [Atom]) {
     if n >= 1 {
         // First atom becomes the origin
         for i in 1..n {
-            atoms[i].position.x -= atoms[0].position.x;
-            atoms[i].position.y -= atoms[0].position.y;
-            atoms[i].position.z -= atoms[0].position.z;
+            atoms[i].position = atoms[i].position.sub(&atoms[0].position);
         }
-        atoms[0].position.x = 0.0;
-        atoms[0].position.y = 0.0;
-        atoms[0].position.z = 0.0;
+        atoms[0].position.set_x(0.0);
+        atoms[0].position.set_y(0.0);
+        atoms[0].position.set_z(0.0);
 
         if n >= 2 {
             // Rotate first around the z axis, then around the y axis, so that the second atom lies on the x axis
-            let p = (atoms[1].position.x.powi(2) + atoms[1].position.y.powi(2)).sqrt();
-            let phi = f64::atan2(atoms[1].position.y, atoms[1].position.x);
+            let p = (atoms[1].position.x().powi(2) + atoms[1].position.y().powi(2)).sqrt();
+            let phi = f64::atan2(atoms[1].position.y(), atoms[1].position.x());
             let cos_phi = phi.cos();
             let sin_phi = phi.sin();
             for a in atoms.iter_mut().take(n).skip(1) {
-                let x = a.position.x;
-                let y = a.position.y;
-                a.position.x = x * cos_phi + y * sin_phi;
-                a.position.y = -x * sin_phi + y * cos_phi;
+                let x = a.position.x();
+                let y = a.position.y();
+                a.position.set_x(x * cos_phi + y * sin_phi);
+                a.position.set_y(-x * sin_phi + y * cos_phi);
             }
-            let psi = f64::atan2(atoms[1].position.z, p);
+            let psi = f64::atan2(atoms[1].position.z(), p);
             let cos_psi = psi.cos();
             let sin_psi = psi.sin();
             for a in atoms.iter_mut().take(n).skip(1) {
-                let x = a.position.x;
-                let z = a.position.z;
-                a.position.x = x * cos_psi + z * sin_psi;
-                a.position.z = -x * sin_psi + z * cos_psi;
+                let x = a.position.x();
+                let z = a.position.z();
+                a.position.set_x(x * cos_psi + z * sin_psi);
+                a.position.set_z(-x * sin_psi + z * cos_psi);
             }
 
             if n >= 3 {
                 // Rotate around x axis in order to have third atom on the xy plane
-                let theta = -f64::atan2(atoms[2].position.z, atoms[2].position.y);
+                let theta = -f64::atan2(atoms[2].position.z(), atoms[2].position.y());
                 let cos_theta = theta.cos();
                 let sin_theta = theta.sin();
                 for a in atoms.iter_mut().take(n).skip(2) {
-                    let y = a.position.y;
-                    let z = a.position.z;
-                    a.position.y = y * cos_theta - z * sin_theta;
-                    a.position.z = y * sin_theta + z * cos_theta;
+                    let y = a.position.y();
+                    let z = a.position.z();
+                    a.position.set_y(y * cos_theta - z * sin_theta);
+                    a.position.set_z(y * sin_theta + z * cos_theta);
                 }
             }
         }
@@ -150,10 +148,12 @@ mod tests {
     fn xyz_normalization(#[case] n: usize) {
         let mut rng = rand::rng();
         let points = (0..n)
-            .map(|_| Point {
-                x: rng.random_range(-10.0..10.0),
-                y: rng.random_range(-10.0..10.0),
-                z: rng.random_range(-10.0..10.0),
+            .map(|_| {
+                Point::new(
+                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-10.0..10.0),
+                )
             })
             .collect::<Vec<Point>>();
         let mut atoms = points
@@ -175,14 +175,14 @@ mod tests {
 
         assert_eq!(n, atoms.len());
         if n >= 1 {
-            assert!((atoms[0].position.x - 0.0).abs() < 1e-12);
-            assert!((atoms[0].position.y - 0.0).abs() < 1e-12);
-            assert!((atoms[0].position.z - 0.0).abs() < 1e-12);
+            assert!((atoms[0].position.x() - 0.0).abs() < 1e-12);
+            assert!((atoms[0].position.y() - 0.0).abs() < 1e-12);
+            assert!((atoms[0].position.z() - 0.0).abs() < 1e-12);
             if n >= 2 {
-                assert!((atoms[1].position.y - 0.0).abs() < 1e-12);
-                assert!((atoms[1].position.z - 0.0).abs() < 1e-12);
+                assert!((atoms[1].position.y() - 0.0).abs() < 1e-12);
+                assert!((atoms[1].position.z() - 0.0).abs() < 1e-12);
                 if n >= 3 {
-                    assert!((atoms[2].position.z - 0.0).abs() < 1e-12);
+                    assert!((atoms[2].position.z() - 0.0).abs() < 1e-12);
                 }
             }
         }

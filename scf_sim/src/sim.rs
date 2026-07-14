@@ -77,12 +77,7 @@ fn nuclear_repulsion_energy(atoms: &[Atom]) -> f64 {
 
     for a in 0..atoms.len() {
         for b in (a + 1)..atoms.len() {
-            let dx = atoms[a].position.x - atoms[b].position.x;
-            let dy = atoms[a].position.y - atoms[b].position.y;
-            let dz = atoms[a].position.z - atoms[b].position.z;
-
-            let r = (dx * dx + dy * dy + dz * dz).sqrt();
-
+            let r = atoms[a].position.distance(&atoms[b].position);
             e += (atoms[a].charge as f64).powi(2) / r;
         }
     }
