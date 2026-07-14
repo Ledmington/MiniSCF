@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use scf_core::{Atom, Point, atomic_number};
+use scf_core::{Atom, atomic_number, point::Point};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
