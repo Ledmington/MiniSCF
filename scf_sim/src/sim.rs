@@ -173,7 +173,7 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
             .unwrap();
         // Print condition number
         log::debug!(
-            "k(S)                           : {}",
+            "k(S)                           : {:.6e}",
             max_eigenvalue / min_eigenvalue
         );
     }

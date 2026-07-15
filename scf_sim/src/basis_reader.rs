@@ -139,23 +139,38 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                 }
 
                 AngularMomentum::P => {
-                    for powers in [(1, 0, 0), (0, 1, 0), (0, 0, 1)] {
-                        let primitives = template
-                            .primitives
-                            .iter()
-                            .map(|&(exponent, coeff)| {
-                                PrimitiveGaussian::new(coeff, exponent, atom.position)
-                            })
-                            .collect();
+                    let primitives: Vec<PrimitiveGaussian> = template
+                        .primitives
+                        .iter()
+                        .map(|&(exponent, coeff)| {
+                            PrimitiveGaussian::new(coeff, exponent, atom.position)
+                        })
+                        .collect();
 
-                        shells.push((
-                            Shell {
-                                center: atom.position,
-                                primitives,
-                            },
-                            AngularMomentum::P,
-                        ));
-                    }
+                    // px
+                    shells.push((
+                        Shell {
+                            center: atom.position,
+                            primitives: primitives.clone(),
+                        },
+                        AngularMomentum::P,
+                    ));
+                    // py
+                    shells.push((
+                        Shell {
+                            center: atom.position,
+                            primitives: primitives.clone(),
+                        },
+                        AngularMomentum::P,
+                    ));
+                    // pz
+                    shells.push((
+                        Shell {
+                            center: atom.position,
+                            primitives,
+                        },
+                        AngularMomentum::P,
+                    ));
                 }
             }
         }
