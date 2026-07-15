@@ -248,7 +248,8 @@ fn primitive_kinetic_energy(
         let l = match axis {
             0 => lb.0,
             1 => lb.1,
-            _ => lb.2,
+            2 => lb.2,
+            _ => unreachable!(),
         } as f64;
 
         // j(j-1) S(j-2)
