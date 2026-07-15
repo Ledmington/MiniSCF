@@ -1,6 +1,6 @@
 use crate::basis::BasisSet;
 use ndarray::{Array1, Array2, Array4};
-use ndarray_linalg::{Eigh, UPLO};
+use ndarray_linalg::{Eigh, Norm, UPLO};
 use scf_core::Atom;
 use std::time::Instant;
 
@@ -123,12 +123,18 @@ fn setup_rhf_simulation(
         s[[i, i]] = 1.0;
     }
     assert_symmetric(&s, 1e-6);
+    log::debug!("Symmetry of S: {:.6e}", (s.to_owned() - s.t()).norm());
+
     assert_symmetric(&t, 1e-6);
+    log::debug!("Symmetry of T: {:.6e}", (t.to_owned() - t.t()).norm());
+
     assert_symmetric(&v, 1e-6);
+    log::debug!("Symmetry of V: {:.6e}", (v.to_owned() - v.t()).norm());
 
     *h = &t + &v;
 
     assert_symmetric(h, 1e-6);
+    log::debug!("Symmetry of H: {:.6e}", (h.to_owned() - h.t()).norm());
 
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
     let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
@@ -143,7 +149,7 @@ fn setup_rhf_simulation(
         .filter(|v| **v > 1e-10)
         .reduce(|a, b| if a < b { a } else { b })
         .unwrap();
-    log::info!("condition number : {}", max_eigenvalue / min_eigenvalue);
+    log::info!("k(S) : {}", max_eigenvalue / min_eigenvalue);
 
     // for e in eigenvalues.iter_mut() {
     //     if *e < 0.0 && e.abs() < 1e-10 {
@@ -159,10 +165,10 @@ fn setup_rhf_simulation(
 
     // X must be symmetric
     assert_symmetric(x, 1e-6);
+    log::debug!("Symmetry of X: {:.6e}", (x.to_owned() - x.t()).norm());
 
     // X^T * S * X must equal the identity (canonical orthogonalization check)
     let should_be_identity = x.t().dot(&s).dot(x);
-    println!("{should_be_identity:?}");
     assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
 
     // H' = X^T * H * X
@@ -170,6 +176,10 @@ fn setup_rhf_simulation(
 
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
+    log::debug!(
+        "Symmetry of H': {:.6e}",
+        (h_prime.to_owned() - h_prime.t()).norm()
+    );
 
     let (_epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
 
