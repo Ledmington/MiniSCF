@@ -55,7 +55,9 @@ fn contracted_pair(
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
             sum += pa.contraction_coefficient()
+                * pa.get_normalization_coefficient(a.angular_momentum)
                 * pb.contraction_coefficient()
+                * pb.get_normalization_coefficient(b.angular_momentum)
                 * f(pa, pb, &a.angular_momentum, &b.angular_momentum);
         }
     }

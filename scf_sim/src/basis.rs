@@ -6,21 +6,16 @@ use std::{f64::consts::PI, sync::Arc};
 
 #[derive(Clone, Debug)]
 pub(crate) struct PrimitiveGaussian {
-    contraction_coefficient: f64, // already includes normalization
+    contraction_coefficient: f64, // raw, does not include normalization
     alpha: f64,
     center: Point,
 }
 
 impl PrimitiveGaussian {
-    pub(crate) fn new(
-        contraction_coefficient: f64,
-        alpha: f64,
-        center: Point,
-        angular_momentum: (u8, u8, u8),
-    ) -> Self {
+    pub(crate) fn new(contraction_coefficient: f64, alpha: f64, center: Point) -> Self {
+        assert!(alpha > 0.0);
         PrimitiveGaussian {
-            contraction_coefficient: contraction_coefficient
-                * get_normalization_coefficient(alpha, angular_momentum),
+            contraction_coefficient,
             alpha,
             center,
         }
@@ -37,16 +32,16 @@ impl PrimitiveGaussian {
     pub(crate) fn center(&self) -> Point {
         self.center
     }
-}
 
-fn get_normalization_coefficient(alpha: f64, (lx, ly, lz): (u8, u8, u8)) -> f64 {
-    let numerator = (4.0 * alpha).powi((lx + ly + lz).into());
+    pub fn get_normalization_coefficient(&self, (lx, ly, lz): (u8, u8, u8)) -> f64 {
+        let numerator = (4.0 * self.alpha).powi((lx + ly + lz).into());
 
-    let denominator = double_factorial(2 * lx as i32 - 1)
-        * double_factorial(2 * ly as i32 - 1)
-        * double_factorial(2 * lz as i32 - 1);
+        let denominator = double_factorial(2 * lx as i32 - 1)
+            * double_factorial(2 * ly as i32 - 1)
+            * double_factorial(2 * lz as i32 - 1);
 
-    ((2.0 * alpha) / PI).powf(0.75) * (numerator / (denominator as f64)).sqrt()
+        ((2.0 * self.alpha) / PI).powf(0.75) * (numerator / (denominator as f64)).sqrt()
+    }
 }
 
 fn double_factorial(mut n: i32) -> i32 {
@@ -214,7 +209,11 @@ impl BasisFunction {
         let gaussian: f64 = shell
             .primitives
             .iter()
-            .map(|p| p.contraction_coefficient * (-p.alpha * r2).exp())
+            .map(|p| {
+                p.contraction_coefficient
+                    * p.get_normalization_coefficient(self.angular_momentum)
+                    * (-p.alpha * r2).exp()
+            })
             .sum();
 
         let angular = match self.angular_momentum {
@@ -250,9 +249,9 @@ mod tests {
         let shell = Shell {
             center,
             primitives: vec![
-                PrimitiveGaussian::new(0.1543289673, 3.425250914, center, (0, 0, 0)),
-                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center, (0, 0, 0)),
-                PrimitiveGaussian::new(0.4446345422, 0.168855404, center, (0, 0, 0)),
+                PrimitiveGaussian::new(0.1543289673, 3.425250914, center),
+                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center),
+                PrimitiveGaussian::new(0.4446345422, 0.168855404, center),
             ],
         };
         let bf = BasisFunction {
@@ -283,9 +282,9 @@ mod tests {
         let shell = Shell {
             center,
             primitives: vec![
-                PrimitiveGaussian::new(0.1559162750, 2.941249355, center, (1, 0, 0)),
-                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (1, 0, 0)),
-                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center, (1, 0, 0)),
+                PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
             ],
         };
         let px = BasisFunction {
@@ -353,9 +352,9 @@ mod tests {
         let shell = Shell {
             center,
             primitives: vec![
-                PrimitiveGaussian::new(0.1559162750, 2.941249355, center, (1, 0, 0)),
-                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (1, 0, 0)),
-                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center, (1, 0, 0)),
+                PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
             ],
         };
         let px = BasisFunction {

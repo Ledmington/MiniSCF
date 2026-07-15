@@ -125,7 +125,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                         .primitives
                         .iter()
                         .map(|&(exponent, coeff)| {
-                            PrimitiveGaussian::new(coeff, exponent, atom.position, (0, 0, 0))
+                            PrimitiveGaussian::new(coeff, exponent, atom.position)
                         })
                         .collect();
 
@@ -144,7 +144,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                             .primitives
                             .iter()
                             .map(|&(exponent, coeff)| {
-                                PrimitiveGaussian::new(coeff, exponent, atom.position, powers)
+                                PrimitiveGaussian::new(coeff, exponent, atom.position)
                             })
                             .collect();
 
