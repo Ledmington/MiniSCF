@@ -33,7 +33,7 @@ impl CubeWriter {
         // -------------------------
         // 1. Header (2 comment lines)
         // -------------------------
-        writeln!(f, "MO Cube generated from SCF")?;
+        writeln!(f, "MO Cube generated from MiniSCF")?;
         writeln!(f, "Orbitals / density")?;
 
         // -------------------------
