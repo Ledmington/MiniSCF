@@ -412,4 +412,37 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn kinetic_energy_s() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+        let shell = Shell {
+            center,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1543289673, 3.425250914, center),
+                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center),
+                PrimitiveGaussian::new(0.4446345422, 0.168855404, center),
+            ],
+        };
+        let bf = BasisFunction {
+            shell: Arc::new(shell),
+            angular_momentum: (0, 0, 0),
+        };
+        let actual_overlap = integrals::overlap(&bf, &bf);
+        let expected_overlap = 1.0;
+        assert!(
+            (actual_overlap - expected_overlap).abs() < 1e-10,
+            "Expected overlap between {:?} and itself to be {} but was {} (seed: {}).",
+            bf,
+            expected_overlap,
+            actual_overlap,
+            seed
+        );
+    }
 }
