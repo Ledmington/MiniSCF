@@ -210,9 +210,9 @@ impl BasisFunction {
     pub(crate) fn compute(&self, r: &Point) -> f64 {
         let shell = &self.shell;
 
-        let dx = r.x() - shell.center.x();
-        let dy = r.y() - shell.center.y();
-        let dz = r.z() - shell.center.z();
+        let dx = r.x - shell.center.x;
+        let dy = r.y - shell.center.y;
+        let dz = r.z - shell.center.z;
 
         let r2 = dx * dx + dy * dy + dz * dz;
 

@@ -388,9 +388,9 @@ fn primitive_eri(
         max_tz,
         rho,
         boys_argument,
-        p_center.x() - q_center.x(),
-        p_center.y() - q_center.y(),
-        p_center.z() - q_center.z(),
+        p_center.x - q_center.x,
+        p_center.y - q_center.y,
+        p_center.z - q_center.z,
     );
 
     let mut sum = 0.0;
@@ -431,9 +431,9 @@ fn gaussian_pair_params(a: &PrimitiveGaussian, b: &PrimitiveGaussian) -> (f64, f
 
 fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> Point {
     Point::new(
-        (a.alpha() * a.center().x() + b.alpha() * b.center().x()) / p,
-        (a.alpha() * a.center().y() + b.alpha() * b.center().y()) / p,
-        (a.alpha() * a.center().z() + b.alpha() * b.center().z()) / p,
+        (a.alpha() * a.center().x + b.alpha() * b.center().x) / p,
+        (a.alpha() * a.center().y + b.alpha() * b.center().y) / p,
+        (a.alpha() * a.center().z + b.alpha() * b.center().z) / p,
     )
 }
 

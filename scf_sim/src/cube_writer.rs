@@ -43,9 +43,9 @@ impl CubeWriter {
             f,
             "{:5} {:10.6} {:10.6} {:10.6}",
             self.atoms.len(),
-            self.grid.origin.x(),
-            self.grid.origin.y(),
-            self.grid.origin.z()
+            self.grid.origin.x,
+            self.grid.origin.y,
+            self.grid.origin.z
         )?;
 
         // -------------------------
@@ -76,11 +76,7 @@ impl CubeWriter {
             writeln!(
                 f,
                 "{:5} {:10.6} {:10.6} {:10.6} {:10.6}",
-                atom.charge,
-                atom.charge,
-                atom.position.x(),
-                atom.position.y(),
-                atom.position.z()
+                atom.charge, atom.charge, atom.position.x, atom.position.y, atom.position.z
             )?;
         }
 
@@ -110,9 +106,9 @@ fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: us
         for iy in 0..grid.ny {
             for iz in 0..grid.nz {
                 let r = Point::new(
-                    grid.origin.x() + (ix as f64) * grid.dx,
-                    grid.origin.y() + (iy as f64) * grid.dy,
-                    grid.origin.z() + (iz as f64) * grid.dz,
+                    grid.origin.x + (ix as f64) * grid.dx,
+                    grid.origin.y + (iy as f64) * grid.dy,
+                    grid.origin.z + (iz as f64) * grid.dz,
                 );
 
                 let psi = basis.evaluate_molecular_orbital(&r, c, mo_index);
@@ -133,27 +129,27 @@ fn compute_grid(atoms: &[Atom]) -> Grid {
 
     let min_x = atoms
         .iter()
-        .map(|a| a.position.x())
+        .map(|a| a.position.x)
         .fold(f64::INFINITY, f64::min);
     let max_x = atoms
         .iter()
-        .map(|a| a.position.x())
+        .map(|a| a.position.x)
         .fold(f64::NEG_INFINITY, f64::max);
     let min_y = atoms
         .iter()
-        .map(|a| a.position.y())
+        .map(|a| a.position.y)
         .fold(f64::INFINITY, f64::min);
     let max_y = atoms
         .iter()
-        .map(|a| a.position.y())
+        .map(|a| a.position.y)
         .fold(f64::NEG_INFINITY, f64::max);
     let min_z = atoms
         .iter()
-        .map(|a| a.position.z())
+        .map(|a| a.position.z)
         .fold(f64::INFINITY, f64::min);
     let max_z = atoms
         .iter()
-        .map(|a| a.position.z())
+        .map(|a| a.position.z)
         .fold(f64::NEG_INFINITY, f64::max);
 
     let origin = Point::new(min_x - PADDING, min_y - PADDING, min_z - PADDING);
