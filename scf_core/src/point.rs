@@ -1,60 +1,38 @@
-#[derive(Clone, Copy, Debug)]
-pub struct Point {
-    x: f64,
-    y: f64,
-    z: f64,
-}
+use rug::Float;
+use std::ops::{Mul, Sub};
 
+#[derive(Clone, Debug)]
+pub struct Point {
+    x: Float,
+    y: Float,
+    z: Float,
+}
 impl Point {
-    pub fn new(x: f64, y: f64, z: f64) -> Self {
+    pub fn new(x: Float, y: Float, z: Float) -> Self {
         Point { x, y, z }
     }
-
-    pub fn x(&self) -> f64 {
-        self.x
+    pub fn x(&self) -> &Float {
+        &self.x
     }
-
-    pub fn y(&self) -> f64 {
-        self.y
+    pub fn y(&self) -> &Float {
+        &self.y
     }
-
-    pub fn z(&self) -> f64 {
-        self.z
+    pub fn z(&self) -> &Float {
+        &self.z
     }
-
-    pub fn set_x(&mut self, x: f64) {
-        self.x = x
-    }
-
-    pub fn set_y(&mut self, y: f64) {
-        self.y = y
-    }
-
-    pub fn set_z(&mut self, z: f64) {
-        self.z = z
-    }
-
     pub fn sub(&self, p: &Point) -> Point {
-        Point {
-            x: self.x - p.x,
-            y: self.y - p.y,
-            z: self.z - p.z,
-        }
+        Point::new(self.x.sub(&p.x), self.y.sub(&p.y), self.z.sub(&p.z))
     }
-
-    pub fn norm_squared(&self) -> f64 {
-        self.x.powi(2) + self.y.powi(2) + self.z.powi(2)
+    pub fn norm_squared(&self) -> Float {
+        self.x.mul(self.x) + self.y.mul(self.y) + self.z.mul(self.z)
     }
-
-    pub fn norm(&self) -> f64 {
+    pub fn norm(&self) -> Float {
         self.norm_squared().sqrt()
     }
-
-    pub fn distance(&self, p: &Point) -> f64 {
+    pub fn distance(&self, p: &Point) -> Float {
         self.sub(p).norm()
     }
-
-    pub fn coordinates(&self) -> [f64; 3] {
-        [self.x, self.y, self.z]
+    pub fn coordinates(&self) -> [Float; 3] {
+        [self.x(), self.y(), self.z()]
     }
 }
