@@ -284,23 +284,133 @@ mod tests {
             center,
             primitives: vec![
                 PrimitiveGaussian::new(0.1559162750, 2.941249355, center, (1, 0, 0)),
-                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (0, 1, 0)),
-                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center, (0, 0, 1)),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (1, 0, 0)),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center, (1, 0, 0)),
             ],
         };
-        let bf = BasisFunction {
-            shell: Arc::new(shell),
-            angular_momentum: (1, 0, 0), // FIXME; add also py and pz
+        let px = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (1, 0, 0),
         };
-        let actual_overlap = integrals::overlap(&bf, &bf);
-        let expected_overlap = 1.0;
-        assert!(
-            (actual_overlap - expected_overlap).abs() < 1e-10,
-            "Expected overlap between {:?} and itself to be {} but was {} (seed: {}).",
-            bf,
-            expected_overlap,
-            actual_overlap,
-            seed
+        let py = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (0, 1, 0),
+        };
+        let pz = BasisFunction {
+            shell: Arc::new(shell),
+            angular_momentum: (0, 0, 1),
+        };
+
+        {
+            let actual_overlap = integrals::overlap(&px, &px);
+            let expected_overlap = 1.0;
+            assert!(
+                (actual_overlap - expected_overlap).abs() < 1e-10,
+                "Expected overlap between Px ({:?}) and itself to be {} but was {} (seed: {}).",
+                px,
+                expected_overlap,
+                actual_overlap,
+                seed
+            );
+        }
+
+        {
+            let actual_overlap = integrals::overlap(&py, &py);
+            let expected_overlap = 1.0;
+            assert!(
+                (actual_overlap - expected_overlap).abs() < 1e-10,
+                "Expected overlap between Py ({:?}) and itself to be {} but was {} (seed: {}).",
+                py,
+                expected_overlap,
+                actual_overlap,
+                seed
+            );
+        }
+
+        {
+            let actual_overlap = integrals::overlap(&pz, &pz);
+            let expected_overlap = 1.0;
+            assert!(
+                (actual_overlap - expected_overlap).abs() < 1e-10,
+                "Expected overlap between Pz ({:?}) and itself to be {} but was {} (seed: {}).",
+                pz,
+                expected_overlap,
+                actual_overlap,
+                seed
+            );
+        }
+    }
+
+    #[test]
+    fn orthogonal_p_orbitals() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
         );
+        let shell = Shell {
+            center,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1559162750, 2.941249355, center, (1, 0, 0)),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (1, 0, 0)),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center, (1, 0, 0)),
+            ],
+        };
+        let px = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (1, 0, 0),
+        };
+        let py = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (0, 1, 0),
+        };
+        let pz = BasisFunction {
+            shell: Arc::new(shell),
+            angular_momentum: (0, 0, 1),
+        };
+
+        {
+            let actual_overlap = integrals::overlap(&px, &py);
+            let expected_overlap = 0.0;
+            assert!(
+                (actual_overlap - expected_overlap).abs() < 1e-10,
+                "Expected overlap between Px ({:?}) and Py ({:?}) to be {} but was {} (seed: {}).",
+                px,
+                py,
+                expected_overlap,
+                actual_overlap,
+                seed
+            );
+        }
+
+        {
+            let actual_overlap = integrals::overlap(&px, &pz);
+            let expected_overlap = 0.0;
+            assert!(
+                (actual_overlap - expected_overlap).abs() < 1e-10,
+                "Expected overlap between Px ({:?}) and Pz ({:?}) to be {} but was {} (seed: {}).",
+                px,
+                pz,
+                expected_overlap,
+                actual_overlap,
+                seed
+            );
+        }
+
+        {
+            let actual_overlap = integrals::overlap(&py, &pz);
+            let expected_overlap = 0.0;
+            assert!(
+                (actual_overlap - expected_overlap).abs() < 1e-10,
+                "Expected overlap between Py ({:?}) and Pz ({:?}) to be {} but was {} (seed: {}).",
+                py,
+                pz,
+                expected_overlap,
+                actual_overlap,
+                seed
+            );
+        }
     }
 }
