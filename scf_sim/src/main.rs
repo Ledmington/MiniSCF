@@ -81,6 +81,21 @@ fn main() -> std::io::Result<()> {
 
     let basis = build_basis(&input_file.atoms, &basis_library);
 
+    log::info!("Checking that the basis set is normalized...");
+    for bf in basis.functions.iter() {
+        let actual_overlap = integrals::overlap(&bf, &bf);
+        let expected_overlap = 1.0;
+        if (actual_overlap - expected_overlap).abs() > 1e-10 {
+            log::warn!(
+                "The basis function {:?} is not normalized: expected overlap with itself to be {} but was {}.",
+                bf,
+                expected_overlap,
+                actual_overlap
+            );
+        }
+    }
+    log::info!("Check complete.");
+
     let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
 
     let c = run_rhf_simulation(&input_file.atoms, &basis, &opt_params);
