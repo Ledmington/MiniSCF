@@ -1,6 +1,8 @@
 use crate::integrals;
+use crate::integrals::nuclear_attraction;
 use ndarray::Array2;
 use ndarray::Array4;
+use scf_core::Atom;
 use scf_core::point::Point;
 use std::{f64::consts::PI, sync::Arc};
 
@@ -113,8 +115,22 @@ impl BasisSet {
         self.one_electron_matrix(integrals::kinetic_energy)
     }
 
-    pub(crate) fn nuclear_attraction_matrix(&self) -> Array2<f64> {
-        self.one_electron_matrix(integrals::nuclear_attraction)
+    pub(crate) fn nuclear_attraction_matrix(&self, nuclei: &[Atom]) -> Array2<f64> {
+        let n = self.num_contracted_gaussians();
+        let mut m = Array2::zeros((n, n));
+
+        for i in 0..n {
+            m[[i, i]] = nuclear_attraction(&self.functions[i], &self.functions[i], nuclei);
+        }
+
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let val = nuclear_attraction(&self.functions[i], &self.functions[j], nuclei);
+                m[[i, j]] = val;
+                m[[j, i]] = val;
+            }
+        }
+        m
     }
 
     fn one_electron_matrix(

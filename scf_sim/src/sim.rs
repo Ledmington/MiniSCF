@@ -118,12 +118,12 @@ struct RhfSetup {
     c0: Array2<f64>,
 }
 
-fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
+fn setup_rhf_simulation(atoms: &[Atom], basis: &BasisSet) -> RhfSetup {
     let n = basis.num_contracted_gaussians();
 
     let s = basis.overlap_matrix();
     let t = basis.kinetic_energy_matrix();
-    let v = basis.nuclear_attraction_matrix();
+    let v = basis.nuclear_attraction_matrix(atoms);
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {
@@ -264,7 +264,9 @@ pub(crate) fn run_rhf_simulation(
     let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
     let n_occ = basis.num_occupied_orbitals(n_electrons);
 
-    let setup = setup_rhf_simulation(basis);
+    log::debug!("N_occ : {}", n_occ);
+
+    let setup = setup_rhf_simulation(atoms, basis);
 
     let eri = basis.electron_repulsion_tensor();
     check_electron_repulsion_integrals(&eri, 1e-6);
@@ -287,6 +289,7 @@ pub(crate) fn run_rhf_simulation(
     log::info!(" ### Optimization parameters ### ");
 
     let mut c;
+    let mut orbital_energies; // usually denoted as epsilon
 
     let mut e_old = 0.0;
 
@@ -327,7 +330,8 @@ pub(crate) fn run_rhf_simulation(
         assert_symmetric(&f_prime, 1e-10);
 
         // diagonalize
-        let (orbital_energies, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
+        let (epsilon, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
+        orbital_energies = epsilon;
 
         // Check that orbital energies are sorted
         for i in 0..(n - 1) {
@@ -430,6 +434,18 @@ pub(crate) fn run_rhf_simulation(
         reason = "UNKNOWN";
     }
     log::info!("Optimization stopped because: {reason}.");
+
+    log::info!("Resulting orbitals:");
+    for i in 0..orbital_energies.len() {
+        log::info!("epsilon[{}] = {:.6e} Eh", i, orbital_energies[i]);
+        log::info!(
+            "C[:,{}] = {:?}",
+            i,
+            (0..orbital_energies.len())
+                .map(|j| c[[i, j]])
+                .collect::<Vec<f64>>()
+        );
+    }
 
     c
 }

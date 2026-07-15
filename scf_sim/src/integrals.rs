@@ -1,6 +1,6 @@
 use std::f64::consts::PI;
 
-use scf_core::point::Point;
+use scf_core::{Atom, point::Point};
 
 use crate::basis::{BasisFunction, PrimitiveGaussian};
 
@@ -12,8 +12,14 @@ pub(crate) fn kinetic_energy(a: &BasisFunction, b: &BasisFunction) -> f64 {
     contracted_pair(a, b, primitive_kinetic_energy)
 }
 
-pub(crate) fn nuclear_attraction(a: &BasisFunction, b: &BasisFunction) -> f64 {
-    contracted_pair(a, b, primitive_nuclear_attraction)
+pub(crate) fn nuclear_attraction(a: &BasisFunction, b: &BasisFunction, nuclei: &[Atom]) -> f64 {
+    let mut sum = 0.0;
+    for nucleus in nuclei {
+        let z = nucleus.charge as f64;
+        sum +=
+            z * contracted_pair_with_nucleus(a, b, &nucleus.position, primitive_nuclear_attraction);
+    }
+    sum
 }
 
 pub(crate) fn electron_repulsion(
@@ -57,6 +63,25 @@ fn contracted_pair(
             sum += a.normalized_coefficient(pa)
                 * b.normalized_coefficient(pb)
                 * f(pa, pb, &a.angular_momentum, &b.angular_momentum);
+        }
+    }
+
+    sum
+}
+
+fn contracted_pair_with_nucleus(
+    a: &BasisFunction,
+    b: &BasisFunction,
+    nucleus: &Point,
+    f: impl Fn(&PrimitiveGaussian, &PrimitiveGaussian, &Point, &(u8, u8, u8), &(u8, u8, u8)) -> f64,
+) -> f64 {
+    let mut sum = 0.0;
+
+    for pa in &a.shell.primitives {
+        for pb in &b.shell.primitives {
+            sum += a.normalized_coefficient(pa)
+                * b.normalized_coefficient(pb)
+                * f(pa, pb, nucleus, &a.angular_momentum, &b.angular_momentum);
         }
     }
 
@@ -298,6 +323,7 @@ fn nuclear_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64, v_ss: f64) -> f64 {
 fn primitive_nuclear_attraction(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
+    nucleus: &Point,
     angular_momentum_a: &(u8, u8, u8),
     angular_momentum_b: &(u8, u8, u8),
 ) -> f64 {
@@ -305,8 +331,7 @@ fn primitive_nuclear_attraction(
 
     let center = weighted_center(a, b, p);
 
-    // NOTE: assumes nucleus at origin
-    let r_p2 = center.norm_squared();
+    let r_p2 = center.sub(nucleus).norm_squared();
 
     let v_ss = -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r_p2));
 
