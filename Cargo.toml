@@ -20,3 +20,8 @@ debug-assertions = false
 incremental = false
 panic = "abort"
 debug = "none"
+
+[workspace.lints.clippy]
+shadow_reuse = "deny"
+shadow_same = "deny"
+shadow_unrelated = "deny"
