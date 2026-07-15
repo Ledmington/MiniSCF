@@ -20,7 +20,7 @@ use xyz::read_xyz;
 #[derive(Parser, Debug)]
 #[command(version, about, long_about = None)]
 struct Args {
-    /// File to read molecule from
+    /// File to read molecule from (coordinates are assumed to be expressed in Bohr units)
     #[arg(short, long, default_value = "input.xyz")]
     input_xyz: String,
 
@@ -36,7 +36,7 @@ struct Args {
     #[arg(long, default_value_t = 100)]
     max_iterations: usize,
 
-    /// Tolerance value for the SCF energy
+    /// Tolerance value for the SCF energy (Hartree)
     #[arg(long, default_value_t = 1.0e-10)]
     e_tol: f64,
 

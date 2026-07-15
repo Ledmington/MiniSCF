@@ -116,9 +116,6 @@ struct RhfSetup {
 
     /// First guess of molecular orbital coefficients
     c0: Array2<f64>,
-
-    /// First guess of molecular orbitals energies
-    epsilon0: Array1<f64>,
 }
 
 fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
@@ -212,21 +209,19 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
     );
 
     // We ignore both eigenvalues and condition number since matrix H' is NOT positive definite
-    let (epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
+    let (orbital_energies, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
     log::debug!(
         "||(C' * diag(e) * C'^T) - H'|| : {:.6e}",
-        ((c_prime.dot(&Array2::from_diag(&epsilon)).dot(&c_prime.t())) - h_prime).norm()
+        ((c_prime
+            .dot(&Array2::from_diag(&orbital_energies))
+            .dot(&c_prime.t()))
+            - h_prime)
+            .norm()
     );
 
     let c = x.dot(&c_prime);
 
-    RhfSetup {
-        h,
-        x,
-        s,
-        c0: c,
-        epsilon0: epsilon,
-    }
+    RhfSetup { h, x, s, c0: c }
 }
 
 fn check_electron_repulsion_integrals(eri: &Array4<f64>, tolerance: f64) {
