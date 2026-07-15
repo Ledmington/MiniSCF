@@ -240,7 +240,10 @@ pub(crate) fn run_rhf_simulation(
     log::info!(" dP tolerance   : {:.6e}", opt_params.p_tol);
     log::info!(" ### Optimization parameters ### ");
 
-    for iter in 0..max_iterations {
+    let mut iter = 0;
+    let mut delta_e = 0.0;
+    let mut delta_p = 0.0;
+    while iter <= max_iterations {
         let loop_beginning = Instant::now();
 
         // Build G(P)
@@ -266,20 +269,22 @@ pub(crate) fn run_rhf_simulation(
         let e_nuclear = nuclear_repulsion_energy(atoms);
         let e_total = e_elec + e_nuclear;
 
-        let delta_e = (e_total - e_old).abs();
-
-        let delta_p = (&p_new - &p).mapv(|x| x * x).sum().sqrt();
+        delta_e = (e_total - e_old).abs();
+        delta_p = (&p_new - &p).mapv(|x| x * x).sum().sqrt();
 
         {
-            let elapsed = Instant::now() - loop_beginning;
+            let elapsed = (Instant::now() - loop_beginning).as_secs_f64();
+            let throughput = (iter as f64) / elapsed;
             log::info!(
-                "iter {iter:3} E = {e_total:20.12} dE = {delta_e:12.5e} dP = {delta_p:12.5e} time = {elapsed:?}"
+                "iter = {iter:3} | E = {e_total:18.12} | dE = {delta_e:10.5e} | dP = {delta_p:10.5e} | dt = {elapsed:10.5e}s | avg. thr. = {throughput:10.5e} it/s"
             );
         }
 
-        if delta_e < e_tol && delta_p < p_tol {
+        if delta_e < e_tol || delta_p < p_tol {
             break;
         }
+
+        iter += 1;
 
         p = p_new.clone();
         e_old = e_total;
@@ -289,6 +294,18 @@ pub(crate) fn run_rhf_simulation(
         let elapsed = Instant::now() - beginning;
         log::info!("Optimization completed in {elapsed:?}.");
     }
+
+    let reason;
+    if iter >= max_iterations {
+        reason = "max iterations reached";
+    } else if delta_e < e_tol {
+        reason = "energy tolerance";
+    } else if delta_p < p_tol {
+        reason = "density tolerance";
+    } else {
+        reason = "UNKNOWN";
+    }
+    log::info!("Optimization stopped because: {reason}.");
 
     c
 }

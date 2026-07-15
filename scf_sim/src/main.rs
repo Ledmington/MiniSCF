@@ -48,7 +48,11 @@ struct Args {
 fn main() -> std::io::Result<()> {
     let beginning = Instant::now();
 
-    SimpleLogger::new().init().unwrap();
+    SimpleLogger::new()
+        .env()
+        .without_timestamps()
+        .init()
+        .unwrap();
 
     let args = Args::parse();
 
