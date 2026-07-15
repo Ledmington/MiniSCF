@@ -87,7 +87,7 @@ fn main() -> std::io::Result<()> {
 
     log::info!("Checking that the basis set is normalized...");
     for bf in basis.functions.iter() {
-        let actual_overlap = integrals::overlap(&bf, &bf);
+        let actual_overlap = integrals::overlap(bf, bf);
         let expected_overlap = 1.0;
         if (actual_overlap - expected_overlap).abs() > 1e-10 {
             log::warn!(

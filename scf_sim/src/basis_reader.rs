@@ -35,17 +35,17 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
     let mut current_shell_p: Option<ShellTemplate> = None; // for SP shells
 
     for line in text.lines() {
-        let line = line.trim();
+        let trimmed = line.trim();
 
-        if line.is_empty() || line.starts_with('#') || line.starts_with("BASIS") {
+        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("BASIS") {
             continue;
         }
 
-        if line == "END" {
+        if trimmed == "END" {
             break;
         }
 
-        let fields: Vec<_> = line.split_whitespace().collect();
+        let fields: Vec<_> = trimmed.split_whitespace().collect();
 
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
