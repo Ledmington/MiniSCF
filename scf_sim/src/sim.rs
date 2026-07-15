@@ -2,7 +2,7 @@ use crate::basis::BasisSet;
 use ndarray::{Array1, Array2, Array4};
 use ndarray_linalg::{Eigh, Norm, UPLO};
 use scf_core::Atom;
-use std::{ops::Mul, time::Instant};
+use std::time::Instant;
 
 fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol
@@ -41,7 +41,8 @@ fn compute_density_matrix(n: usize, n_occ: usize, c: &Array2<f64>, p: &mut Array
     }
 }
 
-fn compute_two_electron_contribution(n: usize, p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
+fn compute_two_electron_contribution(p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
+    let n = p.dim().0;
     let mut g = Array2::<f64>::zeros((n, n));
     for mu in 0..n {
         for nu in 0..n {
@@ -102,12 +103,31 @@ impl OptimizationParameters {
     }
 }
 
-fn setup_rhf_simulation(basis: &BasisSet, h: &mut Array2<f64>, x: &mut Array2<f64>) -> Array2<f64> {
+struct RhfSetup {
+    /// Hamiltonian
+    h: Array2<f64>,
+
+    /// Orthogonalizer
+    x: Array2<f64>,
+
+    /// Orbital overlap matrix
+    s: Array2<f64>,
+
+    /// First guess of molecular orbital coefficients
+    c0: Array2<f64>,
+
+    /// First guess of molecular orbitals energies
+    epsilon0: Array1<f64>,
+}
+
+fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
     let n = basis.num_contracted_gaussians();
 
     let mut s = basis.overlap_matrix();
     let t = basis.kinetic_energy_matrix();
     let v = basis.nuclear_attraction_matrix();
+    let h;
+    let x;
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {
@@ -126,9 +146,9 @@ fn setup_rhf_simulation(basis: &BasisSet, h: &mut Array2<f64>, x: &mut Array2<f6
     assert_symmetric(&v, 1e-6);
     log::debug!("||V - V^T||: {:.6e}", (v.to_owned() - v.t()).norm());
 
-    *h = &t + &v;
+    h = &t + &v;
 
-    assert_symmetric(h, 1e-6);
+    assert_symmetric(&h, 1e-6);
     log::debug!("||H - H^T||: {:.6e}", (h.to_owned() - h.t()).norm());
 
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
@@ -154,22 +174,22 @@ fn setup_rhf_simulation(basis: &BasisSet, h: &mut Array2<f64>, x: &mut Array2<f6
     // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
     let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
 
-    *x = u.dot(&d_inv_sqrt).dot(&u.t());
+    x = u.dot(&d_inv_sqrt).dot(&u.t());
 
     // X must be symmetric
-    assert_symmetric(x, 1e-6);
+    assert_symmetric(&x, 1e-6);
     log::debug!("||X - X^T||: {:.6e}", (x.to_owned() - x.t()).norm());
 
     // X^T * S * X must equal the identity (canonical orthogonalization check)
-    let should_be_identity = x.t().dot(&s).dot(x);
+    let should_be_identity = x.t().dot(&s).dot(&x);
     assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
     log::debug!(
         "||(X^T * S * X) - I||: {:.6e}",
-        ((x.t().dot(&s).dot(x)) - &identity(n)).norm()
+        ((x.t().dot(&s).dot(&x)) - &identity(n)).norm()
     );
 
     // H' = X^T * H * X
-    let h_prime = x.t().dot(h).dot(x);
+    let h_prime = x.t().dot(&h).dot(&x);
 
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
@@ -187,7 +207,13 @@ fn setup_rhf_simulation(basis: &BasisSet, h: &mut Array2<f64>, x: &mut Array2<f6
 
     let c = x.dot(&c_prime);
 
-    c
+    RhfSetup {
+        h,
+        x,
+        s,
+        c0: c,
+        epsilon0: epsilon,
+    }
 }
 
 fn check_electron_repulsion_integrals(eri: &Array4<f64>, tolerance: f64) {
@@ -227,28 +253,24 @@ pub(crate) fn run_rhf_simulation(
     let beginning = Instant::now();
 
     let n = basis.num_contracted_gaussians();
+    let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
+    let n_occ = basis.num_occupied_orbitals(n_electrons);
 
-    let mut h = Array2::<f64>::zeros((n, n));
-    let mut x = Array2::<f64>::zeros((n, n));
-
-    let c = setup_rhf_simulation(basis, &mut h, &mut x);
+    let setup = setup_rhf_simulation(basis);
 
     let eri = basis.electron_repulsion_tensor();
     check_electron_repulsion_integrals(&eri, 1e-6);
-
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Optimization setup completed in {elapsed:?}.");
-    }
 
     // initial guess density
     let mut p = Array2::<f64>::zeros((n, n));
     let mut p_new = Array2::<f64>::zeros((n, n));
 
-    let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
-    let n_occ = basis.num_occupied_orbitals(n_electrons);
+    compute_density_matrix(n, n_occ, &setup.c0, &mut p);
 
-    let mut e_old = 0.0;
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Optimization setup completed in {elapsed:?}.");
+    }
 
     let max_iterations = 100;
     let e_tol = 1e-10;
@@ -260,32 +282,40 @@ pub(crate) fn run_rhf_simulation(
     log::info!(" dP tolerance   : {:.6e}", opt_params.p_tol);
     log::info!(" ### Optimization parameters ### ");
 
+    let mut c;
+
+    let mut e_old = 0.0;
+
     let mut iter = 0;
-    let mut delta_e = 0.0;
-    let mut delta_p = 0.0;
-    while iter <= max_iterations {
+    let mut delta_e;
+    let mut delta_p;
+    loop {
         let loop_beginning = Instant::now();
 
         // Build G(P)
-        let g = compute_two_electron_contribution(n, &p, &eri);
+        let g = compute_two_electron_contribution(&p, &eri);
 
         // F = H + G
-        let f = &h + &g;
+        let f = &setup.h + &g;
 
         // F' = X^T F X
-        let f_prime = x.t().dot(&f).dot(&x);
+        let f_prime = setup.x.t().dot(&f).dot(&setup.x);
 
         // diagonalize
-        let (_eps, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
+        let (_orbital_energies, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
+        log::debug!(
+            "||(F'^T * S * F') - I||: {:.6e}",
+            ((f_prime.t().dot(&setup.s).dot(&f_prime)) - &identity(n)).norm()
+        );
 
         // AO coefficients
-        let c = x.dot(&c_prime);
+        c = setup.x.dot(&c_prime);
 
         // density
         compute_density_matrix(n, n_occ, &c, &mut p_new);
 
         // RHF energy
-        let e_elec = compute_electronic_energy(n, &p_new, &h, &f);
+        let e_elec = compute_electronic_energy(n, &p_new, &setup.h, &f);
         let e_nuclear = nuclear_repulsion_energy(atoms);
         let e_total = e_elec + e_nuclear;
 
@@ -300,14 +330,14 @@ pub(crate) fn run_rhf_simulation(
             );
         }
 
-        if delta_e < e_tol || delta_p < p_tol {
+        p = p_new.clone();
+        e_old = e_total;
+
+        if iter >= max_iterations || delta_e < e_tol || delta_p < p_tol {
             break;
         }
 
         iter += 1;
-
-        p = p_new.clone();
-        e_old = e_total;
     }
 
     {
