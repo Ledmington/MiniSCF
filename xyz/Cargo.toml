@@ -11,3 +11,6 @@ simple_logger = "5.2.0"
 [dev-dependencies]
 rstest = "0.26.1"
 rand = "0.10.1"
+
+[lints]
+workspace = true
