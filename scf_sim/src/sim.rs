@@ -133,23 +133,35 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
         assert!(approx_eq(s[[i, i]], 1.0, 1e-6), "S[{i},{i}] != 1");
     }
     assert_symmetric(&s, 1e-6);
-    log::debug!("||S - S^T||: {:.6e}", (s.to_owned() - s.t()).norm());
+    log::debug!(
+        "||S - S^T||                    : {:.6e}",
+        (s.to_owned() - s.t()).norm()
+    );
 
     assert_symmetric(&t, 1e-6);
-    log::debug!("||T - T^T||: {:.6e}", (t.to_owned() - t.t()).norm());
+    log::debug!(
+        "||T - T^T||                    : {:.6e}",
+        (t.to_owned() - t.t()).norm()
+    );
 
     assert_symmetric(&v, 1e-6);
-    log::debug!("||V - V^T||: {:.6e}", (v.to_owned() - v.t()).norm());
+    log::debug!(
+        "||V - V^T||                    : {:.6e}",
+        (v.to_owned() - v.t()).norm()
+    );
 
     let h = &t + &v;
 
     assert_symmetric(&h, 1e-6);
-    log::debug!("||H - H^T||: {:.6e}", (h.to_owned() - h.t()).norm());
+    log::debug!(
+        "||H - H^T||                    : {:.6e}",
+        (h.to_owned() - h.t()).norm()
+    );
 
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
     let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
     log::debug!(
-        "||(U * diag(d) * U^T) - S||: {:.6e}",
+        "||(U * diag(d) * U^T) - S||    : {:.6e}",
         ((u.clone().dot(&Array2::from_diag(&eigenvalues)).dot(&u.t())) - s.clone()).norm()
     );
 
@@ -163,7 +175,10 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
             .reduce(|a, b| if a < b { a } else { b })
             .unwrap();
         // Print condition number
-        log::info!("k(S) : {}", max_eigenvalue / min_eigenvalue);
+        log::debug!(
+            "k(S)                           : {}",
+            max_eigenvalue / min_eigenvalue
+        );
     }
 
     // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
@@ -173,13 +188,16 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
 
     // X must be symmetric
     assert_symmetric(&x, 1e-6);
-    log::debug!("||X - X^T||: {:.6e}", (x.to_owned() - x.t()).norm());
+    log::debug!(
+        "||X - X^T||                    : {:.6e}",
+        (x.to_owned() - x.t()).norm()
+    );
 
     // X^T * S * X must equal the identity (canonical orthogonalization check)
     let should_be_identity = x.t().dot(&s).dot(&x);
     assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
     log::debug!(
-        "||(X^T * S * X) - I||: {:.6e}",
+        "||(X^T * S * X) - I||          : {:.6e}",
         ((x.t().dot(&s).dot(&x)) - &identity(n)).norm()
     );
 
@@ -189,14 +207,14 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
     log::debug!(
-        "||H' - H'^T||: {:.6e}",
+        "||H' - H'^T||                  : {:.6e}",
         (h_prime.to_owned() - h_prime.t()).norm()
     );
 
     // We ignore both eigenvalues and condition number since matrix H' is NOT positive definite
     let (epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
     log::debug!(
-        "||(C' * diag(e) * C'^T) - H'||: {:.6e}",
+        "||(C' * diag(e) * C'^T) - H'|| : {:.6e}",
         ((c_prime.dot(&Array2::from_diag(&epsilon)).dot(&c_prime.t())) - h_prime).norm()
     );
 
@@ -285,28 +303,95 @@ pub(crate) fn run_rhf_simulation(
     loop {
         let iteration_beginning = Instant::now();
 
-        // Build G(P)
+        // Build two-electron contribution G(P) (must be symmetric)
         let g = compute_two_electron_contribution(&p, &eri);
+        assert_symmetric(&g, 1e-10);
+        log::debug!(
+            "||G - G^T||                    : {:.6e}",
+            (g.to_owned() - g.t()).norm()
+        );
 
         // F = H + G
         let f = &setup.h + &g;
 
+        // The Fock (F) matrix must be symmetric
+        assert_symmetric(&f, 1e-10);
+        log::debug!(
+            "||F - F^T||                    : {:.6e}",
+            (f.to_owned() - f.t()).norm()
+        );
+
         // F' = X^T F X
         let f_prime = setup.x.t().dot(&f).dot(&setup.x);
 
+        // The transformed/orthogonalized Fock (F') matrix must be symmetric
+        assert_symmetric(&f_prime, 1e-10);
+        log::debug!(
+            "||F' - F'^T||                  : {:.6e}",
+            (f_prime.to_owned() - f_prime.t()).norm()
+        );
+
         // diagonalize
-        let (_orbital_energies, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
+        let (orbital_energies, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
+
+        // Check that orbital energies are sorted
+        for i in 0..(n - 1) {
+            assert!(orbital_energies[i] <= orbital_energies[i + 1]);
+        }
+
+        // Double-check on reconstruction of the orthogonal Fock (F') matrix
+        let reconstructed_f_prime = c_prime
+            .dot(&Array2::from_diag(&orbital_energies))
+            .dot(&c_prime.t());
+        assert_matrix_approx_eq(&reconstructed_f_prime, &f_prime, 1e-10);
+        log::debug!(
+            "||(C' * diag(e) * F'^T) - F'|| : {:.6e}",
+            (reconstructed_f_prime - f_prime).norm()
+        );
 
         // AO coefficients
         c = setup.x.dot(&c_prime);
 
+        // Double-check on the orbital coefficients
+        let csc = c.t().dot(&setup.s).dot(&c);
+        assert_matrix_approx_eq(&csc, &identity(n), 1e-10);
         log::debug!(
-            "||(C^T * S * C) - I||: {:.6e}",
-            ((c.t().dot(&setup.s).dot(&c)) - &identity(n)).norm()
+            "||(C^T * S * C) - I||          : {:.6e}",
+            (csc - &identity(n)).norm()
         );
 
-        // density
+        let residual = &f.dot(&c) - &setup.s.dot(&c).dot(&Array2::from_diag(&orbital_energies));
+        let residual_norm = residual.norm();
+        log::debug!("||FC - SCE||                   : {:.6e}", residual_norm);
+        assert!(
+            residual_norm < 1e-8,
+            "Roothaan residual too large: {}",
+            residual_norm
+        );
+
+        // Density (must be symmetric)
         compute_density_matrix(n, n_occ, &c, &mut p_new);
+        assert_symmetric(&p_new, 1e-6);
+        log::debug!(
+            "||P - P^T||                    : {:.6e}",
+            (p_new.to_owned() - p_new.t()).norm()
+        );
+
+        // Density idempotency check: PSP = 2P
+        log::debug!(
+            "||P * S * P - 2 * P||          : {:.6e}",
+            (p_new.dot(&setup.s).dot(&p_new) - 2.0 * &p_new).norm()
+        );
+
+        // Double-check on the electron count
+        let electron_count = (&p_new * &setup.s).sum();
+        log::debug!("N_e                            : {:.6}", electron_count);
+        assert!(
+            approx_eq(electron_count, n_electrons as f64, 1e-8),
+            "Wrong electron count: expected {} but was {}.",
+            electron_count,
+            n_electrons
+        );
 
         // RHF energy
         let e_elec = compute_electronic_energy(n, &p_new, &setup.h, &f);
@@ -320,7 +405,7 @@ pub(crate) fn run_rhf_simulation(
             let elapsed = (Instant::now() - iteration_beginning).as_secs_f64();
             let throughput = ((iter + 1) as f64) / (Instant::now() - loop_beginning).as_secs_f64();
             log::info!(
-                "iter = {iter:3} | E = {e_total:18.12} | dE = {delta_e:10.5e} | dP = {delta_p:10.5e} | dt = {elapsed:10.5e}s | thr. = {throughput:10.5e} it/s"
+                "iter = {iter:3} | Ee = {e_elec:18.12} | En = {e_nuclear:18.12} | E = {e_total:18.12} | dE = {delta_e:.6e} | dP = {delta_p:.6e} | dt = {elapsed:.6e}s | thr. = {throughput:.6e} it/s"
             );
         }
 
