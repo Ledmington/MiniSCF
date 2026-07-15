@@ -57,7 +57,6 @@ fn contracted_pair(
     f: impl Fn(&PrimitiveGaussian, &PrimitiveGaussian, &(u8, u8, u8), &(u8, u8, u8)) -> f64,
 ) -> f64 {
     let mut sum = 0.0;
-
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
             sum += a.normalized_coefficient(pa)
@@ -65,10 +64,10 @@ fn contracted_pair(
                 * f(pa, pb, &a.angular_momentum, &b.angular_momentum);
         }
     }
-
     sum
 }
 
+/// Contracted helper
 fn contracted_pair_with_nucleus(
     a: &BasisFunction,
     b: &BasisFunction,
@@ -76,7 +75,6 @@ fn contracted_pair_with_nucleus(
     f: impl Fn(&PrimitiveGaussian, &PrimitiveGaussian, &Point, &(u8, u8, u8), &(u8, u8, u8)) -> f64,
 ) -> f64 {
     let mut sum = 0.0;
-
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
             sum += a.normalized_coefficient(pa)
@@ -84,7 +82,6 @@ fn contracted_pair_with_nucleus(
                 * f(pa, pb, nucleus, &a.angular_momentum, &b.angular_momentum);
         }
     }
-
     sum
 }
 
@@ -320,7 +317,7 @@ fn nuclear_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64, v_ss: f64) -> f64 {
     e(ia as i32, ib as i32, 0, pa, pb, p, v_ss)
 }
 
-fn primitive_nuclear_attraction(
+pub(crate) fn primitive_nuclear_attraction(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
     nucleus: &Point,

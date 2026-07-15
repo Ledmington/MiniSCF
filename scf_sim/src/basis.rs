@@ -247,6 +247,8 @@ impl BasisFunction {
 mod tests {
     use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 
+    use crate::integrals::primitive_nuclear_attraction;
+
     use super::*;
 
     #[test]
@@ -507,6 +509,24 @@ mod tests {
             expected,
             actual,
             seed
+        );
+    }
+
+    #[test]
+    fn nuclear_attraction_ss_same_center() {
+        let alpha = 1.0;
+        let nucleus = Point::new(0.0, 0.0, 0.0);
+        let primitive = PrimitiveGaussian::new(1.0, alpha, nucleus);
+
+        let actual =
+            primitive_nuclear_attraction(&primitive, &primitive, &nucleus, &(0, 0, 0), &(0, 0, 0));
+        let expected = -2.0 * (2.0 * alpha / PI).sqrt();
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected nuclear attraction between primtive {:?} and itself with a nucleus at its center to be {} but was {}.",
+            primitive,
+            expected,
+            actual,
         );
     }
 }
