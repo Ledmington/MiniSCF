@@ -234,11 +234,19 @@ impl BasisFunction {
 
 #[cfg(test)]
 mod tests {
+    use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+
     use super::*;
 
     #[test]
     fn self_overlap_s() {
-        let center = Point::new(0.0, 0.0, 0.0);
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
         let shell = Shell {
             center,
             primitives: vec![
@@ -255,16 +263,23 @@ mod tests {
         let expected_overlap = 1.0;
         assert!(
             (actual_overlap - expected_overlap).abs() < 1e-10,
-            "Expected overlap between {:?} and itself to be {} but was {}.",
+            "Expected overlap between {:?} and itself to be {} but was {} (seed: {}).",
             bf,
             expected_overlap,
-            actual_overlap
+            actual_overlap,
+            seed
         );
     }
 
     #[test]
     fn self_overlap_p() {
-        let center = Point::new(0.0, 0.0, 0.0);
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
         let shell = Shell {
             center,
             primitives: vec![
@@ -281,10 +296,11 @@ mod tests {
         let expected_overlap = 1.0;
         assert!(
             (actual_overlap - expected_overlap).abs() < 1e-10,
-            "Expected overlap between {:?} and itself to be {} but was {}.",
+            "Expected overlap between {:?} and itself to be {} but was {} (seed: {}).",
             bf,
             expected_overlap,
-            actual_overlap
+            actual_overlap,
+            seed
         );
     }
 }
