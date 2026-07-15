@@ -29,6 +29,7 @@ fn identity(n: usize) -> Array2<f64> {
 }
 
 fn compute_density_matrix(n: usize, n_occ: usize, c: &Array2<f64>, p: &mut Array2<f64>) {
+    // FIXME: could exploit symmetry and compute only half the coefficients
     for mu in 0..n {
         for nu in 0..n {
             let mut sum = 0.0;
@@ -78,7 +79,7 @@ fn nuclear_repulsion_energy(atoms: &[Atom]) -> f64 {
     for a in 0..atoms.len() {
         for b in (a + 1)..atoms.len() {
             let r = atoms[a].position.distance(&atoms[b].position);
-            e += (atoms[a].charge as f64).powi(2) / r;
+            e += ((atoms[a].charge as f64) * (atoms[b].charge as f64)) / r;
         }
     }
 
@@ -123,19 +124,13 @@ struct RhfSetup {
 fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
     let n = basis.num_contracted_gaussians();
 
-    let mut s = basis.overlap_matrix();
+    let s = basis.overlap_matrix();
     let t = basis.kinetic_energy_matrix();
     let v = basis.nuclear_attraction_matrix();
-    let h;
-    let x;
 
     // diagonal must be 1, and S must be symmetric
     for i in 0..n {
         assert!(approx_eq(s[[i, i]], 1.0, 1e-6), "S[{i},{i}] != 1");
-    }
-    // Force diagonal entries of S to be exactly 1
-    for i in 0..n {
-        s[[i, i]] = 1.0;
     }
     assert_symmetric(&s, 1e-6);
     log::debug!("||S - S^T||: {:.6e}", (s.to_owned() - s.t()).norm());
@@ -146,7 +141,7 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
     assert_symmetric(&v, 1e-6);
     log::debug!("||V - V^T||: {:.6e}", (v.to_owned() - v.t()).norm());
 
-    h = &t + &v;
+    let h = &t + &v;
 
     assert_symmetric(&h, 1e-6);
     log::debug!("||H - H^T||: {:.6e}", (h.to_owned() - h.t()).norm());
@@ -174,7 +169,7 @@ fn setup_rhf_simulation(basis: &BasisSet) -> RhfSetup {
     // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
     let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
 
-    x = u.dot(&d_inv_sqrt).dot(&u.t());
+    let x = u.dot(&d_inv_sqrt).dot(&u.t());
 
     // X must be symmetric
     assert_symmetric(&x, 1e-6);
@@ -272,10 +267,6 @@ pub(crate) fn run_rhf_simulation(
         log::info!("Optimization setup completed in {elapsed:?}.");
     }
 
-    let max_iterations = 100;
-    let e_tol = 1e-10;
-    let p_tol = 1e-8;
-
     log::info!(" ### Optimization parameters ### ");
     log::info!(" Max Iterations : {}", opt_params.max_iterations);
     log::info!(" dE tolerance   : {:.6e}", opt_params.e_tol);
@@ -289,8 +280,10 @@ pub(crate) fn run_rhf_simulation(
     let mut iter = 0;
     let mut delta_e;
     let mut delta_p;
+
+    let loop_beginning = Instant::now();
     loop {
-        let loop_beginning = Instant::now();
+        let iteration_beginning = Instant::now();
 
         // Build G(P)
         let g = compute_two_electron_contribution(&p, &eri);
@@ -303,13 +296,14 @@ pub(crate) fn run_rhf_simulation(
 
         // diagonalize
         let (_orbital_energies, c_prime) = f_prime.eigh(UPLO::Lower).unwrap();
-        log::debug!(
-            "||(F'^T * S * F') - I||: {:.6e}",
-            ((f_prime.t().dot(&setup.s).dot(&f_prime)) - &identity(n)).norm()
-        );
 
         // AO coefficients
         c = setup.x.dot(&c_prime);
+
+        log::debug!(
+            "||(C^T * S * C) - I||: {:.6e}",
+            ((c.t().dot(&setup.s).dot(&c)) - &identity(n)).norm()
+        );
 
         // density
         compute_density_matrix(n, n_occ, &c, &mut p_new);
@@ -323,17 +317,19 @@ pub(crate) fn run_rhf_simulation(
         delta_p = (&p_new - &p).mapv(|x| x * x).sum().sqrt();
 
         {
-            let elapsed = (Instant::now() - loop_beginning).as_secs_f64();
-            let throughput = (iter as f64) / elapsed;
+            let elapsed = (Instant::now() - iteration_beginning).as_secs_f64();
+            let throughput = ((iter + 1) as f64) / (Instant::now() - loop_beginning).as_secs_f64();
             log::info!(
-                "iter = {iter:3} | E = {e_total:18.12} | dE = {delta_e:10.5e} | dP = {delta_p:10.5e} | dt = {elapsed:10.5e}s | avg. thr. = {throughput:10.5e} it/s"
+                "iter = {iter:3} | E = {e_total:18.12} | dE = {delta_e:10.5e} | dP = {delta_p:10.5e} | dt = {elapsed:10.5e}s | thr. = {throughput:10.5e} it/s"
             );
         }
 
-        p = p_new.clone();
+        std::mem::swap(&mut p, &mut p_new);
         e_old = e_total;
 
-        if iter >= max_iterations || delta_e < e_tol || delta_p < p_tol {
+        if iter >= opt_params.max_iterations
+            || (delta_e < opt_params.e_tol && delta_p < opt_params.p_tol)
+        {
             break;
         }
 
@@ -346,12 +342,10 @@ pub(crate) fn run_rhf_simulation(
     }
 
     let reason;
-    if iter >= max_iterations {
+    if iter >= opt_params.max_iterations {
         reason = "max iterations reached";
-    } else if delta_e < e_tol {
-        reason = "energy tolerance";
-    } else if delta_p < p_tol {
-        reason = "density tolerance";
+    } else if delta_e < opt_params.e_tol && delta_p < opt_params.p_tol {
+        reason = "energy/density tolerance";
     } else {
         reason = "UNKNOWN";
     }
