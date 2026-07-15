@@ -117,15 +117,11 @@ impl BasisSet {
         self.one_electron_matrix(integrals::nuclear_attraction)
     }
 
-    fn nbf(&self) -> usize {
-        self.functions.len()
-    }
-
     fn one_electron_matrix(
         &self,
         f: impl Fn(&BasisFunction, &BasisFunction) -> f64,
     ) -> Array2<f64> {
-        let n = self.nbf();
+        let n = self.num_contracted_gaussians();
         let mut m = Array2::zeros((n, n));
 
         for i in 0..n {
@@ -143,7 +139,7 @@ impl BasisSet {
     }
 
     pub(crate) fn electron_repulsion_tensor(&self) -> Array4<f64> {
-        let n = self.functions.len();
+        let n = self.num_contracted_gaussians();
         let mut eri = Array4::zeros((n, n, n, n));
 
         for a in 0..n {

@@ -2,7 +2,7 @@ use crate::basis::BasisSet;
 use ndarray::{Array1, Array2, Array4};
 use ndarray_linalg::{Eigh, Norm, UPLO};
 use scf_core::Atom;
-use std::time::Instant;
+use std::{ops::Mul, time::Instant};
 
 fn approx_eq(a: f64, b: f64, tol: f64) -> bool {
     (a - b).abs() <= tol
@@ -102,11 +102,7 @@ impl OptimizationParameters {
     }
 }
 
-fn setup_rhf_simulation(
-    basis: &BasisSet,
-    h: &mut Array2<f64>,
-    x: &mut Array2<f64>,
-) -> (Array2<f64>, Array4<f64>) {
+fn setup_rhf_simulation(basis: &BasisSet, h: &mut Array2<f64>, x: &mut Array2<f64>) -> Array2<f64> {
     let n = basis.num_contracted_gaussians();
 
     let mut s = basis.overlap_matrix();
@@ -137,18 +133,23 @@ fn setup_rhf_simulation(
 
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
     let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
+    log::debug!(
+        "||(U * diag(d) * U^T) - S||: {:.6e}",
+        ((u.clone().dot(&Array2::from_diag(&eigenvalues)).dot(&u.t())) - s.clone()).norm()
+    );
 
-    let max_eigenvalue = *eigenvalues
-        .iter()
-        .filter(|v| **v > 1e-10)
-        .reduce(|a, b| if a > b { a } else { b })
-        .unwrap();
-    let min_eigenvalue = *eigenvalues
-        .iter()
-        .filter(|v| **v > 1e-10)
-        .reduce(|a, b| if a < b { a } else { b })
-        .unwrap();
-    log::info!("k(S) : {}", max_eigenvalue / min_eigenvalue);
+    {
+        let max_eigenvalue = *eigenvalues
+            .iter()
+            .reduce(|a, b| if a > b { a } else { b })
+            .unwrap();
+        let min_eigenvalue = *eigenvalues
+            .iter()
+            .reduce(|a, b| if a < b { a } else { b })
+            .unwrap();
+        // Print condition number
+        log::info!("k(S) : {}", max_eigenvalue / min_eigenvalue);
+    }
 
     // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
     let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
@@ -162,6 +163,10 @@ fn setup_rhf_simulation(
     // X^T * S * X must equal the identity (canonical orthogonalization check)
     let should_be_identity = x.t().dot(&s).dot(x);
     assert_matrix_approx_eq(&should_be_identity, &identity(n), 1e-6);
+    log::debug!(
+        "||(X^T * S * X) - I||: {:.6e}",
+        ((x.t().dot(&s).dot(x)) - &identity(n)).norm()
+    );
 
     // H' = X^T * H * X
     let h_prime = x.t().dot(h).dot(x);
@@ -173,34 +178,44 @@ fn setup_rhf_simulation(
         (h_prime.to_owned() - h_prime.t()).norm()
     );
 
-    let (_epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
+    // We ignore both eigenvalues and condition number since matrix H' is NOT positive definite
+    let (epsilon, c_prime) = h_prime.eigh(UPLO::Lower).unwrap();
+    log::debug!(
+        "||(C' * diag(e) * C'^T) - H'||: {:.6e}",
+        ((c_prime.dot(&Array2::from_diag(&epsilon)).dot(&c_prime.t())) - h_prime).norm()
+    );
 
     let c = x.dot(&c_prime);
 
-    let eri = basis.electron_repulsion_tensor();
+    c
+}
+
+fn check_electron_repulsion_integrals(eri: &Array4<f64>, tolerance: f64) {
+    let n = eri.dim().0;
+    assert_eq!(n, eri.dim().1);
+    assert_eq!(n, eri.dim().2);
+    assert_eq!(n, eri.dim().3);
     for a in 0..n {
         for b in 0..n {
             for c in 0..n {
                 for d in 0..n {
                     let abcd = eri[[a, b, c, d]];
                     assert!(
-                        approx_eq(abcd, eri[[b, a, c, d]], 1e-6),
+                        approx_eq(abcd, eri[[b, a, c, d]], tolerance),
                         "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{b}{a}|{c}{d}⟩"
                     );
                     assert!(
-                        approx_eq(abcd, eri[[a, b, d, c]], 1e-6),
+                        approx_eq(abcd, eri[[a, b, d, c]], tolerance),
                         "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{a}{b}|{d}{c}⟩"
                     );
                     assert!(
-                        approx_eq(abcd, eri[[c, d, a, b]], 1e-6),
+                        approx_eq(abcd, eri[[c, d, a, b]], tolerance),
                         "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{c}{d}|{a}{b}⟩"
                     );
                 }
             }
         }
     }
-
-    (c, eri)
 }
 
 pub(crate) fn run_rhf_simulation(
@@ -216,7 +231,10 @@ pub(crate) fn run_rhf_simulation(
     let mut h = Array2::<f64>::zeros((n, n));
     let mut x = Array2::<f64>::zeros((n, n));
 
-    let (c, eri) = setup_rhf_simulation(basis, &mut h, &mut x);
+    let c = setup_rhf_simulation(basis, &mut h, &mut x);
+
+    let eri = basis.electron_repulsion_tensor();
+    check_electron_repulsion_integrals(&eri, 1e-6);
 
     {
         let elapsed = Instant::now() - beginning;
