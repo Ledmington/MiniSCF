@@ -32,14 +32,10 @@ pub(crate) fn electron_repulsion(
                         * prim_c.contraction_coefficient()
                         * prim_d.contraction_coefficient()
                         * primitive_eri(
-                            prim_a,
-                            prim_b,
-                            prim_c,
-                            prim_d,
-                            &a.angular_momentum,
-                            &b.angular_momentum,
-                            &c.angular_momentum,
-                            &d.angular_momentum,
+                            (prim_a, &a.angular_momentum),
+                            (prim_b, &b.angular_momentum),
+                            (prim_c, &c.angular_momentum),
+                            (prim_d, &d.angular_momentum),
                         );
                 }
             }
@@ -79,9 +75,7 @@ impl RCoulomb {
         max_v: usize,
         rho: f64,
         t: f64,
-        px: f64,
-        py: f64,
-        pz: f64,
+        p: (f64, f64, f64),
     ) -> Self {
         let mut data = vec![vec![vec![vec![0.0; max_v + 1]; max_u + 1]; max_t + 1]; max_n + 2];
 
@@ -90,8 +84,8 @@ impl RCoulomb {
         //
         // R^n_000 = (-2rho)^n F_n(T)
         //
-        for n in 0..=max_n + 1 {
-            data[n][0][0][0] = (-2.0 * rho).powi(n as i32) * boys(n, t);
+        for (n, x) in data.iter_mut().enumerate().take(max_n + 1 + 1) {
+            x[0][0][0] = (-2.0 * rho).powi(n as i32) * boys(n, t);
         }
 
         //
@@ -110,7 +104,7 @@ impl RCoulomb {
                             // R^n_{tuv}
                             // from x recursion
                             //
-                            let mut v = px * data[n + 1][tx - 1][ty][tz];
+                            let mut v = p.0 * data[n + 1][tx - 1][ty][tz];
 
                             if tx > 1 {
                                 v += (tx - 1) as f64 * data[n + 1][tx - 2][ty][tz];
@@ -118,7 +112,7 @@ impl RCoulomb {
 
                             v
                         } else if ty > 0 {
-                            let mut v = py * data[n + 1][tx][ty - 1][tz];
+                            let mut v = p.1 * data[n + 1][tx][ty - 1][tz];
 
                             if ty > 1 {
                                 v += (ty - 1) as f64 * data[n + 1][tx][ty - 2][tz];
@@ -126,7 +120,7 @@ impl RCoulomb {
 
                             v
                         } else {
-                            let mut v = pz * data[n + 1][tx][ty][tz - 1];
+                            let mut v = p.2 * data[n + 1][tx][ty][tz - 1];
 
                             if tz > 1 {
                                 v += (tz - 1) as f64 * data[n + 1][tx][ty][tz - 2];
@@ -258,10 +252,10 @@ fn primitive_kinetic_energy(
         } as f64;
 
         // j(j-1) S(j-2)
-        if l >= 2.0 {
-            if let Some(lb2) = shift(lb, axis, -2) {
-                value += l * (l - 1.0) * primitive_overlap(a, b, la, &lb2);
-            }
+        if l >= 2.0
+            && let Some(lb2) = shift(lb, axis, -2)
+        {
+            value += l * (l - 1.0) * primitive_overlap(a, b, la, &lb2);
         }
 
         // -2β(2j+1) S(j)
@@ -347,23 +341,24 @@ fn primitive_nuclear_attraction(
 }
 
 fn primitive_eri(
-    a: &PrimitiveGaussian,
-    b: &PrimitiveGaussian,
-    c: &PrimitiveGaussian,
-    d: &PrimitiveGaussian,
-    la: &(u8, u8, u8),
-    lb: &(u8, u8, u8),
-    lc: &(u8, u8, u8),
-    ld: &(u8, u8, u8),
+    a: (&PrimitiveGaussian, &(u8, u8, u8)),
+    b: (&PrimitiveGaussian, &(u8, u8, u8)),
+    c: (&PrimitiveGaussian, &(u8, u8, u8)),
+    d: (&PrimitiveGaussian, &(u8, u8, u8)),
 ) -> f64 {
-    let p = a.alpha() + b.alpha();
-    let q = c.alpha() + d.alpha();
+    let (prim_a, la) = a;
+    let (prim_b, lb) = b;
+    let (prim_c, lc) = c;
+    let (prim_d, ld) = d;
 
-    let ab = hermite_pair(a, b, la, lb);
-    let cd = hermite_pair(c, d, lc, ld);
+    let p = prim_a.alpha() + prim_b.alpha();
+    let q = prim_c.alpha() + prim_d.alpha();
 
-    let p_center = weighted_center(a, b, p);
-    let q_center = weighted_center(c, d, q);
+    let ab = hermite_pair(prim_a, prim_b, la, lb);
+    let cd = hermite_pair(prim_c, prim_d, lc, ld);
+
+    let p_center = weighted_center(prim_a, prim_b, p);
+    let q_center = weighted_center(prim_c, prim_d, q);
 
     let pq2 = p_center.sub(&q_center).norm_squared();
 
@@ -388,9 +383,11 @@ fn primitive_eri(
         max_tz,
         rho,
         boys_argument,
-        p_center.x - q_center.x,
-        p_center.y - q_center.y,
-        p_center.z - q_center.z,
+        (
+            p_center.x - q_center.x,
+            p_center.y - q_center.y,
+            p_center.z - q_center.z,
+        ),
     );
 
     let mut sum = 0.0;
