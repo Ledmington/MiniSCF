@@ -129,11 +129,13 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                         })
                         .collect();
 
-                    shells.push(Shell {
-                        center: atom.position,
-                        angular: AngularMomentum::S,
-                        primitives,
-                    });
+                    shells.push((
+                        Shell {
+                            center: atom.position,
+                            primitives,
+                        },
+                        AngularMomentum::S,
+                    ));
                 }
 
                 AngularMomentum::P => {
@@ -146,11 +148,13 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                             })
                             .collect();
 
-                        shells.push(Shell {
-                            center: atom.position,
-                            angular: AngularMomentum::P,
-                            primitives,
-                        });
+                        shells.push((
+                            Shell {
+                                center: atom.position,
+                                primitives,
+                            },
+                            AngularMomentum::P,
+                        ));
                     }
                 }
             }

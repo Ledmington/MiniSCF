@@ -68,33 +68,31 @@ pub(crate) struct BasisSet {
 }
 
 impl BasisSet {
-    pub(crate) fn new(shells: Vec<Shell>) -> Self {
-        let shells: Vec<Arc<Shell>> = shells.into_iter().map(Arc::new).collect();
-
+    pub(crate) fn new(shells: Vec<(Shell, AngularMomentum)>) -> Self {
         let mut functions = Vec::new();
 
-        for shell in &shells {
-            match shell.angular {
+        for (shell, angular) in &shells {
+            match angular {
                 AngularMomentum::S => {
                     functions.push(BasisFunction {
-                        shell: Arc::clone(shell),
+                        shell: Arc::clone(&Arc::new(shell.clone())),
                         angular_momentum: (0, 0, 0),
                     });
                 }
                 AngularMomentum::P => {
                     // px
                     functions.push(BasisFunction {
-                        shell: Arc::clone(shell),
+                        shell: Arc::clone(&Arc::new(shell.clone())),
                         angular_momentum: (1, 0, 0),
                     });
                     // py
                     functions.push(BasisFunction {
-                        shell: Arc::clone(shell),
+                        shell: Arc::clone(&Arc::new(shell.clone())),
                         angular_momentum: (0, 1, 0),
                     });
                     // pz
                     functions.push(BasisFunction {
-                        shell: Arc::clone(shell),
+                        shell: Arc::clone(&Arc::new(shell.clone())),
                         angular_momentum: (0, 0, 1),
                     });
                 }
@@ -194,7 +192,6 @@ pub(crate) enum AngularMomentum {
 #[derive(Clone, Debug)]
 pub(crate) struct Shell {
     pub(crate) center: Point,
-    pub(crate) angular: AngularMomentum,
     pub(crate) primitives: Vec<PrimitiveGaussian>,
 }
 
@@ -220,14 +217,14 @@ impl BasisFunction {
             .map(|p| p.contraction_coefficient * (-p.alpha * r2).exp())
             .sum();
 
-        let angular = match (shell.angular.clone(), self.angular_momentum) {
-            (AngularMomentum::S, _) => 1.0,
-            (AngularMomentum::P, (1, 0, 0)) => dx,
-            (AngularMomentum::P, (0, 1, 0)) => dy,
-            (AngularMomentum::P, (0, 0, 1)) => dz,
-            (AngularMomentum::P, _) => panic!(
-                "Don't know what to do with angular momentum {:?} and {:?}",
-                shell.angular, self.angular_momentum
+        let angular = match self.angular_momentum {
+            (0, 0, 0) => 1.0,
+            (1, 0, 0) => dx,
+            (0, 1, 0) => dy,
+            (0, 0, 1) => dz,
+            _ => panic!(
+                "Don't know what to do with angular momentum {:?}.",
+                self.angular_momentum
             ),
         };
 
@@ -244,7 +241,6 @@ mod tests {
         let center = Point::new(0.0, 0.0, 0.0);
         let shell = Shell {
             center,
-            angular: AngularMomentum::S,
             primitives: vec![
                 PrimitiveGaussian::new(0.1543289673, 3.425250914, center, (0, 0, 0)),
                 PrimitiveGaussian::new(0.5353281423, 0.6239137298, center, (0, 0, 0)),
@@ -271,7 +267,6 @@ mod tests {
         let center = Point::new(0.0, 0.0, 0.0);
         let shell = Shell {
             center,
-            angular: AngularMomentum::P,
             primitives: vec![
                 PrimitiveGaussian::new(0.1559162750, 2.941249355, center, (1, 0, 0)),
                 PrimitiveGaussian::new(0.6076837186, 0.6834830964, center, (0, 1, 0)),
