@@ -4,6 +4,7 @@ members = [
     "xyz",
     "internal_crd",
     "scf_sim",
+    "bse_get",
 ]
 resolver = "3"
 
