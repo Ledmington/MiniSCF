@@ -150,13 +150,6 @@ fn setup_rhf_simulation(
         .unwrap();
     log::info!("k(S) : {}", max_eigenvalue / min_eigenvalue);
 
-    // for e in eigenvalues.iter_mut() {
-    //     if *e < 0.0 && e.abs() < 1e-10 {
-    //         // *e = 0.0;
-    //         *e = e.abs();
-    //     }
-    // }
-
     // X = U * D^(-1/2) * U^T  — the canonical orthogonalization matrix
     let d_inv_sqrt = Array2::from_diag(&eigenvalues.mapv(|e| 1.0 / e.sqrt()));
 

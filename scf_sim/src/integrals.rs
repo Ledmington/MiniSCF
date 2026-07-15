@@ -234,7 +234,7 @@ fn shift(l: &(u8, u8, u8), axis: usize, delta: i8) -> Option<(u8, u8, u8)> {
     Some((out[0] as u8, out[1] as u8, out[2] as u8))
 }
 
-fn primitive_kinetic_energy(
+pub(crate) fn primitive_kinetic_energy(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
     la: &(u8, u8, u8),
