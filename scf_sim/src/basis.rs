@@ -33,7 +33,7 @@ impl PrimitiveGaussian {
         self.center
     }
 
-    pub fn get_normalization_coefficient(&self, (lx, ly, lz): (u8, u8, u8)) -> f64 {
+    pub fn normalization_coefficient(&self, (lx, ly, lz): (u8, u8, u8)) -> f64 {
         let numerator = (4.0 * self.alpha).powi((lx + ly + lz).into());
 
         let denominator = double_factorial(2 * lx as i32 - 1)
@@ -209,11 +209,7 @@ impl BasisFunction {
         let gaussian: f64 = shell
             .primitives
             .iter()
-            .map(|p| {
-                p.contraction_coefficient
-                    * p.get_normalization_coefficient(self.angular_momentum)
-                    * (-p.alpha * r2).exp()
-            })
+            .map(|p| self.normalized_coefficient(p) * (-p.alpha * r2).exp())
             .sum();
 
         let angular = match self.angular_momentum {
@@ -228,6 +224,10 @@ impl BasisFunction {
         };
 
         gaussian * angular
+    }
+
+    pub fn normalized_coefficient(&self, p: &PrimitiveGaussian) -> f64 {
+        p.contraction_coefficient * p.normalization_coefficient(self.angular_momentum)
     }
 }
 
