@@ -123,18 +123,18 @@ fn setup_rhf_simulation(
         s[[i, i]] = 1.0;
     }
     assert_symmetric(&s, 1e-6);
-    log::debug!("Symmetry of S: {:.6e}", (s.to_owned() - s.t()).norm());
+    log::debug!("||S - S^T||: {:.6e}", (s.to_owned() - s.t()).norm());
 
     assert_symmetric(&t, 1e-6);
-    log::debug!("Symmetry of T: {:.6e}", (t.to_owned() - t.t()).norm());
+    log::debug!("||T - T^T||: {:.6e}", (t.to_owned() - t.t()).norm());
 
     assert_symmetric(&v, 1e-6);
-    log::debug!("Symmetry of V: {:.6e}", (v.to_owned() - v.t()).norm());
+    log::debug!("||V - V^T||: {:.6e}", (v.to_owned() - v.t()).norm());
 
     *h = &t + &v;
 
     assert_symmetric(h, 1e-6);
-    log::debug!("Symmetry of H: {:.6e}", (h.to_owned() - h.t()).norm());
+    log::debug!("||H - H^T||: {:.6e}", (h.to_owned() - h.t()).norm());
 
     // Symmetric eigendecomposition of S: S = U * diag(d) * U^T
     let (eigenvalues, u): (Array1<f64>, Array2<f64>) = s.eigh(UPLO::Lower).unwrap();
@@ -165,7 +165,7 @@ fn setup_rhf_simulation(
 
     // X must be symmetric
     assert_symmetric(x, 1e-6);
-    log::debug!("Symmetry of X: {:.6e}", (x.to_owned() - x.t()).norm());
+    log::debug!("||X - X^T||: {:.6e}", (x.to_owned() - x.t()).norm());
 
     // X^T * S * X must equal the identity (canonical orthogonalization check)
     let should_be_identity = x.t().dot(&s).dot(x);
@@ -177,7 +177,7 @@ fn setup_rhf_simulation(
     // H' must be symmetric (since H and X are both symmetric, X^T * H * X is too)
     assert_symmetric(&h_prime, 1e-6);
     log::debug!(
-        "Symmetry of H': {:.6e}",
+        "||H' - H'^T||: {:.6e}",
         (h_prime.to_owned() - h_prime.t()).norm()
     );
 
