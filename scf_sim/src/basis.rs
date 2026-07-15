@@ -64,7 +64,6 @@ fn double_factorial(mut n: i32) -> i32 {
 
 #[derive(Debug)]
 pub(crate) struct BasisSet {
-    pub(crate) shells: Vec<Arc<Shell>>,
     pub(crate) functions: Vec<BasisFunction>,
 }
 
@@ -102,11 +101,10 @@ impl BasisSet {
             }
         }
 
-        Self { shells, functions }
+        Self { functions }
     }
 
     pub(crate) fn num_contracted_gaussians(&self) -> usize {
-        // self.shells.len()
         self.functions.len()
     }
 
