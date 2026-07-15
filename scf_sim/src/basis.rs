@@ -238,7 +238,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn self_overlap_s() {
+    fn test_self_overlap_s() {
         let seed = rand::rng().random();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let center = Point::new(
@@ -271,7 +271,7 @@ mod tests {
     }
 
     #[test]
-    fn self_overlap_p() {
+    fn test_self_overlap_p() {
         let seed = rand::rng().random();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let center = Point::new(
@@ -341,7 +341,7 @@ mod tests {
     }
 
     #[test]
-    fn orthogonal_p_orbitals() {
+    fn test_orthogonal_p_orbitals() {
         let seed = rand::rng().random();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let center = Point::new(
@@ -414,8 +414,93 @@ mod tests {
     }
 
     #[test]
-    fn kinetic_energy_s() {
+    fn test_single_normalized_s_primitive_kinetic() {
         let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        let alpha = 0.5;
+
+        let primitive = PrimitiveGaussian {
+            alpha,
+            contraction_coefficient: 1.0,
+            center,
+        };
+
+        let shell = Shell {
+            center: primitive.center,
+            primitives: vec![primitive],
+        };
+
+        let bf = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let actual = integrals::kinetic_energy(&bf, &bf);
+
+        let expected = 1.5 * alpha;
+
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected kinetic energy between {:?} and itself to be {} but was {} (seed: {}).",
+            bf,
+            expected,
+            actual,
+            seed
+        );
+    }
+
+    #[test]
+    fn test_single_normalized_s_primitive_with_contraction() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        let alpha = 0.5;
+        let c = 0.7;
+
+        let primitive = PrimitiveGaussian {
+            alpha,
+            contraction_coefficient: c,
+            center,
+        };
+
+        let shell = Shell {
+            center: primitive.center,
+            primitives: vec![primitive],
+        };
+
+        let bf = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let actual = integrals::kinetic_energy(&bf, &bf);
+
+        let expected = c * c * 1.5 * alpha;
+
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected kinetic energy between {:?} and itself to be {} but was {} (seed: {}).",
+            bf,
+            expected,
+            actual,
+            seed
+        );
+    }
+
+    #[test]
+    fn kinetic_energy_s() {
+        let seed = 17025172737520736326; //rand::rng().random();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
         let center = Point::new(
             rng.random_range(-10.0..10.0),
@@ -431,18 +516,95 @@ mod tests {
             ],
         };
         let bf = BasisFunction {
-            shell: Arc::new(shell),
+            shell: Arc::new(shell.clone()),
             angular_momentum: (0, 0, 0),
         };
-        let actual_overlap = integrals::overlap(&bf, &bf);
-        let expected_overlap = 1.0;
+        let actual_kinetic = integrals::kinetic_energy(&bf, &bf);
+        let mut expected_kinetic = 0.0;
+        // for i in 0..shell.primitives.len() {
+        //     for j in (i + 1)..shell.primitives.len() {
+        //         expected_kinetic += shell.primitives[i].contraction_coefficient
+        //             * shell.primitives[j].contraction_coefficient
+        //             * (1.5 * todo!());
+        //     }
+        // }
         assert!(
-            (actual_overlap - expected_overlap).abs() < 1e-10,
-            "Expected overlap between {:?} and itself to be {} but was {} (seed: {}).",
+            (actual_kinetic - expected_kinetic).abs() < 1e-10,
+            "Expected kinetic energy between {:?} and itself to be {} but was {} (seed: {}).",
             bf,
-            expected_overlap,
-            actual_overlap,
+            expected_kinetic,
+            actual_kinetic,
             seed
         );
+    }
+
+    #[test]
+    fn kinetic_energy_p() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+        let shell = Shell {
+            center,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+            ],
+        };
+        let px = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (1, 0, 0),
+        };
+        let py = BasisFunction {
+            shell: Arc::new(shell.clone()),
+            angular_momentum: (0, 1, 0),
+        };
+        let pz = BasisFunction {
+            shell: Arc::new(shell),
+            angular_momentum: (0, 0, 1),
+        };
+
+        {
+            let actual_kinetic = integrals::kinetic_energy(&px, &px);
+            let expected_kinetic = 1.0;
+            assert!(
+                (actual_kinetic - expected_kinetic).abs() < 1e-10,
+                "Expected kinetic energy between Px ({:?}) and itself to be {} but was {} (seed: {}).",
+                px,
+                expected_kinetic,
+                actual_kinetic,
+                seed
+            );
+        }
+
+        {
+            let actual_kinetic = integrals::kinetic_energy(&py, &py);
+            let expected_kinetic = 1.0;
+            assert!(
+                (actual_kinetic - expected_kinetic).abs() < 1e-10,
+                "Expected kinetic energy between Py ({:?}) and itself to be {} but was {} (seed: {}).",
+                py,
+                expected_kinetic,
+                actual_kinetic,
+                seed
+            );
+        }
+
+        {
+            let actual_kinetic = integrals::kinetic_energy(&pz, &pz);
+            let expected_kinetic = 1.0;
+            assert!(
+                (actual_kinetic - expected_kinetic).abs() < 1e-10,
+                "Expected kinetic energy between Pz ({:?}) and itself to be {} but was {} (seed: {}).",
+                pz,
+                expected_kinetic,
+                actual_kinetic,
+                seed
+            );
+        }
     }
 }

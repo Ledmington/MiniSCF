@@ -41,8 +41,7 @@ fn compute_density_matrix(n: usize, n_occ: usize, c: &Array2<f64>, p: &mut Array
     }
 }
 
-// TODO: what is G?
-fn compute_g(n: usize, p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
+fn compute_two_electron_contribution(n: usize, p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
     let mut g = Array2::<f64>::zeros((n, n));
     for mu in 0..n {
         for nu in 0..n {
@@ -257,7 +256,7 @@ pub(crate) fn run_rhf_simulation(
         let loop_beginning = Instant::now();
 
         // Build G(P)
-        let g = compute_g(n, &p, &eri);
+        let g = compute_two_electron_contribution(n, &p, &eri);
 
         // F = H + G
         let f = &h + &g;
