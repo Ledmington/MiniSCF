@@ -58,11 +58,10 @@ fn main() -> Result<()> {
         .map(|e| atomic_number(e).map(|n| n.to_string()))
         .collect::<Result<Vec<_>>>()?;
 
-    let elements = elements.join(",");
-
     let url = format!(
         "http://www.basissetexchange.org/api/basis/{}/format/nwchem/?version=1&elements={}",
-        basis, elements
+        basis,
+        elements.join(",")
     );
 
     println!("Requesting: {url}");
