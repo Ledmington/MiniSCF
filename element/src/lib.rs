@@ -10,6 +10,10 @@ pub const HYDROGEN: Element = Element {
     symbol: "H",
     number: 1,
 };
+pub const LITHIUM: Element = Element {
+    symbol: "Li",
+    number: 3,
+};
 pub const CARBON: Element = Element {
     symbol: "C",
     number: 6,
@@ -18,6 +22,7 @@ pub const CARBON: Element = Element {
 pub fn from_symbol(symbol: String) -> Element {
     match symbol.to_ascii_lowercase().as_str() {
         "h" => HYDROGEN,
+        "li" => LITHIUM,
         "c" => CARBON,
         _ => panic!("Unknown element with symbol '{symbol}'"),
     }
