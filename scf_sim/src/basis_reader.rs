@@ -50,33 +50,49 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
-            if let (Some(symbol), Some(shell)) = (current_element.take(), current_shell.take()) {
+            if let Some(symbol) = current_element.take() {
                 let element = element::from_symbol(symbol);
-                if let Some(shell_p) = current_shell_p.take() {
-                    library.entry(element.clone()).or_default().push(shell_p);
+
+                if let Some(shell) = current_shell.take() {
+                    library.entry(element.clone()).or_default().push(shell);
                 }
-                library.entry(element).or_default().push(shell);
+
+                if let Some(shell_p) = current_shell_p.take() {
+                    library.entry(element).or_default().push(shell_p);
+                }
             }
 
             current_element = Some(fields[0].to_string());
 
-            let angular = match fields[1] {
-                "S" => AngularMomentum::S,
-                "P" => AngularMomentum::P,
+            match fields[1] {
+                "S" => {
+                    current_shell = Some(ShellTemplate {
+                        angular: AngularMomentum::S,
+                        primitives: Vec::new(),
+                    });
+                }
+
+                "P" => {
+                    current_shell = Some(ShellTemplate {
+                        angular: AngularMomentum::P,
+                        primitives: Vec::new(),
+                    });
+                }
+
                 "SP" => {
+                    current_shell = Some(ShellTemplate {
+                        angular: AngularMomentum::S,
+                        primitives: Vec::new(),
+                    });
+
                     current_shell_p = Some(ShellTemplate {
                         angular: AngularMomentum::P,
                         primitives: Vec::new(),
                     });
-                    AngularMomentum::S
                 }
-                _ => panic!("Unknown orbital '{}'", fields[1]),
-            };
 
-            current_shell = Some(ShellTemplate {
-                angular,
-                primitives: Vec::new(),
-            });
+                _ => panic!("Unknown orbital '{}'", fields[1]),
+            }
 
             continue;
         }
@@ -102,9 +118,14 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
         }
     }
 
-    if let (Some(symbol), Some(shell)) = (current_element.take(), current_shell.take()) {
+    // Final flush
+    if let Some(symbol) = current_element.take() {
         let element = element::from_symbol(symbol);
-        library.entry(element.clone()).or_default().push(shell);
+
+        if let Some(shell) = current_shell.take() {
+            library.entry(element.clone()).or_default().push(shell);
+        }
+
         if let Some(shell_p) = current_shell_p.take() {
             library.entry(element).or_default().push(shell_p);
         }
@@ -114,7 +135,7 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 }
 
 pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
-    let mut shells = Vec::new();
+    let mut shells: Vec<(Shell, (u8, u8, u8))> = Vec::new();
 
     for atom in atoms {
         let templates = basis_library.get(&atom.element).unwrap_or_else(|| {
@@ -140,7 +161,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                             center: atom.position,
                             primitives,
                         },
-                        AngularMomentum::S,
+                        (0, 0, 0),
                     ));
                 }
 
@@ -159,7 +180,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                             center: atom.position,
                             primitives: primitives.clone(),
                         },
-                        AngularMomentum::P,
+                        (1, 0, 0),
                     ));
                     // py
                     shells.push((
@@ -167,7 +188,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                             center: atom.position,
                             primitives: primitives.clone(),
                         },
-                        AngularMomentum::P,
+                        (0, 1, 0),
                     ));
                     // pz
                     shells.push((
@@ -175,7 +196,7 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
                             center: atom.position,
                             primitives,
                         },
-                        AngularMomentum::P,
+                        (0, 0, 1),
                     ));
                 }
             }

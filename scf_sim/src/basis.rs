@@ -61,35 +61,14 @@ pub(crate) struct BasisSet {
 }
 
 impl BasisSet {
-    pub(crate) fn new(shells: Vec<(Shell, AngularMomentum)>) -> Self {
+    pub(crate) fn new(shells: Vec<(Shell, (u8, u8, u8))>) -> Self {
         let mut functions = Vec::new();
 
-        for (shell, angular) in &shells {
-            match angular {
-                AngularMomentum::S => {
-                    functions.push(BasisFunction {
-                        shell: Arc::clone(&Arc::new(shell.clone())),
-                        angular_momentum: (0, 0, 0),
-                    });
-                }
-                AngularMomentum::P => {
-                    // px
-                    functions.push(BasisFunction {
-                        shell: Arc::clone(&Arc::new(shell.clone())),
-                        angular_momentum: (1, 0, 0),
-                    });
-                    // py
-                    functions.push(BasisFunction {
-                        shell: Arc::clone(&Arc::new(shell.clone())),
-                        angular_momentum: (0, 1, 0),
-                    });
-                    // pz
-                    functions.push(BasisFunction {
-                        shell: Arc::clone(&Arc::new(shell.clone())),
-                        angular_momentum: (0, 0, 1),
-                    });
-                }
-            }
+        for (shell, angular_momentum) in &shells {
+            functions.push(BasisFunction {
+                shell: Arc::new(shell.clone()),
+                angular_momentum: *angular_momentum,
+            });
         }
 
         Self { functions }
