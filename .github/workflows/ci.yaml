@@ -28,7 +28,7 @@ jobs:
     needs: format_check
     strategy:
       matrix:
-        toolchain: ["1.88.0", "1.96.0"]
+        toolchain: ["1.88.0", "1.97.0"]
         profile: ["debug", "release"]
         include:
           - profile: release
