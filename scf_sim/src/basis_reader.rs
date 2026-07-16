@@ -208,6 +208,13 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
+    use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+    use scf_core::point::Point;
+
+    use crate::basis::BasisFunction;
+
     use super::*;
 
     #[test]
@@ -220,21 +227,43 @@ H    S
       0.1688554040E+00       0.4446345422E+00
 END
 ";
-
-        let basis = parse_nwchem_basis_text(text);
-        let mut expected = HashMap::new();
-        expected.insert(
-            element::HYDROGEN,
-            vec![ShellTemplate {
-                angular: AngularMomentum::S,
-                primitives: vec![
-                    (3.425250914, 0.1543289673),
-                    (0.6239137298, 0.5353281423),
-                    (0.168855404, 0.4446345422),
-                ],
-            }],
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
         );
-        assert_eq!(expected, basis);
+
+        let library = parse_nwchem_basis_text(text);
+        let basis = build_basis(
+            &[Atom {
+                element: element::HYDROGEN,
+                position: center,
+                charge: 1,
+            }],
+            &library,
+        );
+        let shell = Shell {
+            center,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1543289673, 3.425250914, center),
+                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center),
+                PrimitiveGaussian::new(0.4446345422, 0.168855404, center),
+            ],
+        };
+        let expected = BasisSet {
+            functions: vec![BasisFunction {
+                shell: Arc::new(shell),
+                angular_momentum: (0, 0, 0),
+            }],
+        };
+
+        assert_eq!(
+            expected, basis,
+            "Expected parsed basis set to be equal to {:?} but was {:?} (seed: {}).",
+            expected, basis, seed
+        );
     }
 
     #[test]
@@ -257,48 +286,92 @@ C    SP
 END
 ";
 
-        let basis = parse_nwchem_basis_text(text);
-        let mut expected = HashMap::new();
-        expected.insert(
-            element::HYDROGEN,
-            vec![ShellTemplate {
-                angular: AngularMomentum::S,
-                primitives: vec![
-                    (3.425250914, 0.1543289673),
-                    (0.6239137298, 0.5353281423),
-                    (0.168855404, 0.4446345422),
-                ],
-            }],
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
         );
-        expected.insert(
-            element::CARBON,
-            vec![
-                ShellTemplate {
-                    angular: AngularMomentum::S,
-                    primitives: vec![
-                        (71.61683735, 0.1543289673),
-                        (13.04509632, 0.5353281423),
-                        (3.530512160, 0.4446345422),
-                    ],
+
+        let library = parse_nwchem_basis_text(text);
+        let basis = build_basis(
+            &[Atom {
+                element: element::CARBON,
+                position: center,
+                charge: 6,
+            }],
+            &library,
+        );
+
+        let expected = BasisSet {
+            functions: vec![
+                // 1s core
+                BasisFunction {
+                    shell: Arc::new(Shell {
+                        center,
+                        primitives: vec![
+                            PrimitiveGaussian::new(0.1543289673, 71.61683735, center),
+                            PrimitiveGaussian::new(0.5353281423, 13.04509632, center),
+                            PrimitiveGaussian::new(0.4446345422, 3.530512160, center),
+                        ],
+                    }),
+                    angular_momentum: (0, 0, 0),
                 },
-                ShellTemplate {
-                    angular: AngularMomentum::S,
-                    primitives: vec![
-                        (2.941249355, -0.09996722919),
-                        (0.6834830964, 0.3995128261),
-                        (0.2222899159, 0.7001154689),
-                    ],
+                // 2s valence
+                BasisFunction {
+                    shell: Arc::new(Shell {
+                        center,
+                        primitives: vec![
+                            PrimitiveGaussian::new(-0.09996722919, 2.941249355, center),
+                            PrimitiveGaussian::new(0.3995128261, 0.6834830964, center),
+                            PrimitiveGaussian::new(0.7001154689, 0.2222899159, center),
+                        ],
+                    }),
+                    angular_momentum: (0, 0, 0),
                 },
-                ShellTemplate {
-                    angular: AngularMomentum::P,
-                    primitives: vec![
-                        (2.941249355, 0.1559162750),
-                        (0.6834830964, 0.6076837186),
-                        (0.2222899159, 0.3919573931),
-                    ],
+                // 2px
+                BasisFunction {
+                    shell: Arc::new(Shell {
+                        center,
+                        primitives: vec![
+                            PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
+                            PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
+                            PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                        ],
+                    }),
+                    angular_momentum: (1, 0, 0),
+                },
+                // 2py
+                BasisFunction {
+                    shell: Arc::new(Shell {
+                        center,
+                        primitives: vec![
+                            PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
+                            PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
+                            PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                        ],
+                    }),
+                    angular_momentum: (0, 1, 0),
+                },
+                // 2pz
+                BasisFunction {
+                    shell: Arc::new(Shell {
+                        center,
+                        primitives: vec![
+                            PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
+                            PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
+                            PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                        ],
+                    }),
+                    angular_momentum: (0, 0, 1),
                 },
             ],
+        };
+        assert_eq!(
+            expected, basis,
+            "Expected parsed basis set to be equal to {:?} but was {:?} (seed: {}).",
+            expected, basis, seed
         );
-        assert_eq!(expected, basis);
     }
 }

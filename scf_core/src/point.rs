@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point {
     // TODO: make private and use getters
     pub x: f64,

@@ -6,7 +6,7 @@ use scf_core::Atom;
 use scf_core::point::Point;
 use std::{f64::consts::PI, sync::Arc};
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PrimitiveGaussian {
     contraction_coefficient: f64, // raw, does not include normalization
     alpha: f64,
@@ -55,7 +55,7 @@ fn double_factorial(mut n: i32) -> i32 {
     s
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct BasisSet {
     pub(crate) functions: Vec<BasisFunction>,
 }
@@ -171,13 +171,13 @@ pub(crate) enum AngularMomentum {
     P,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Shell {
     pub(crate) center: Point,
     pub(crate) primitives: Vec<PrimitiveGaussian>,
 }
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq)]
 pub(crate) struct BasisFunction {
     pub(crate) shell: Arc<Shell>,
     pub(crate) angular_momentum: (u8, u8, u8), // (lx, ly, lz)
