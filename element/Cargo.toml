@@ -1,10 +1,9 @@
 [package]
-name = "scf_core"
+name = "element"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-element = { path = "../element" }
 
 [dev-dependencies]
 

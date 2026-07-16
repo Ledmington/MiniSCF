@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use scf_core::{Atom, atomic_number, point::Point};
+use scf_core::{Atom, point::Point};
 use std::{
     fs::File,
     io::{BufRead, BufReader},
@@ -49,6 +49,7 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
         }
 
         let symbol = parts[0].to_string();
+        let element = element::from_symbol(symbol);
 
         let x: f64 = parts[1]
             .parse()
@@ -63,8 +64,8 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
             .map_err(|_| format!("invalid z coordinate: {}", parts[3]))?;
 
         atoms.push(Atom {
-            charge: atomic_number(&symbol)?,
-            symbol,
+            charge: element.number,
+            element,
             position: Point::new(x, y, z),
         });
     }
@@ -159,7 +160,7 @@ mod tests {
         let mut atoms = points
             .iter()
             .map(|p| Atom {
-                symbol: "C".to_string(),
+                element: element::CARBON,
                 position: *p,
                 charge: 6,
             })

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+element = { path = "../element" }
 scf_core = { path = "../scf_core" }
 log = "0.4.33"
 simple_logger = "5.2.0"

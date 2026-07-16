@@ -67,7 +67,7 @@ fn main() -> std::io::Result<()> {
     for atom in input_file.atoms.iter() {
         log::info!(
             " {} {} {} {} {}",
-            atom.symbol,
+            atom.element.symbol,
             atom.charge,
             atom.position.x,
             atom.position.y,

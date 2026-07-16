@@ -29,10 +29,7 @@ fn write_xyz(path: &String, content: &XYZFile) -> io::Result<()> {
         writeln!(
             writer,
             "{:<2} {:>16.8} {:>16.8} {:>16.8}",
-            a.symbol,
-            a.position.x,
-            a.position.y,
-            a.position.z
+            a.element.symbol, a.position.x, a.position.y, a.position.z
         )?;
     }
 

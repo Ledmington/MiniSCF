@@ -1,3 +1,4 @@
+use element::Element;
 use scf_core::Atom;
 use std::{collections::HashMap, fs, time::Instant};
 
@@ -9,7 +10,7 @@ pub(crate) struct ShellTemplate {
     primitives: Vec<(f64, f64)>,
 }
 
-pub(crate) type BasisLibrary = HashMap<String, Vec<ShellTemplate>>;
+pub(crate) type BasisLibrary = HashMap<Element, Vec<ShellTemplate>>;
 
 pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
     let beginning = Instant::now();
@@ -28,7 +29,7 @@ pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
 }
 
 fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
-    let mut library: HashMap<String, Vec<ShellTemplate>> = HashMap::new();
+    let mut library: HashMap<Element, Vec<ShellTemplate>> = HashMap::new();
 
     let mut current_element: Option<String> = None;
     let mut current_shell: Option<ShellTemplate> = None;
@@ -49,7 +50,8 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
-            if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
+            if let (Some(symbol), Some(shell)) = (current_element.take(), current_shell.take()) {
+                let element = element::from_symbol(symbol);
                 if let Some(shell_p) = current_shell_p.take() {
                     library.entry(element.clone()).or_default().push(shell_p);
                 }
@@ -100,7 +102,8 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
         }
     }
 
-    if let (Some(element), Some(shell)) = (current_element.take(), current_shell.take()) {
+    if let (Some(symbol), Some(shell)) = (current_element.take(), current_shell.take()) {
+        let element = element::from_symbol(symbol);
         library.entry(element.clone()).or_default().push(shell);
         if let Some(shell_p) = current_shell_p.take() {
             library.entry(element).or_default().push(shell_p);
@@ -114,9 +117,12 @@ pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Basis
     let mut shells = Vec::new();
 
     for atom in atoms {
-        let templates = basis_library
-            .get(&atom.symbol)
-            .unwrap_or_else(|| panic!("No basis functions found for element '{}'", atom.symbol));
+        let templates = basis_library.get(&atom.element).unwrap_or_else(|| {
+            panic!(
+                "No basis functions found for element '{}'",
+                atom.element.symbol
+            )
+        });
 
         for template in templates {
             match template.angular {
@@ -197,7 +203,7 @@ END
         let basis = parse_nwchem_basis_text(text);
         let mut expected = HashMap::new();
         expected.insert(
-            "H".to_string(),
+            element::HYDROGEN,
             vec![ShellTemplate {
                 angular: AngularMomentum::S,
                 primitives: vec![
@@ -233,7 +239,7 @@ END
         let basis = parse_nwchem_basis_text(text);
         let mut expected = HashMap::new();
         expected.insert(
-            "H".to_string(),
+            element::HYDROGEN,
             vec![ShellTemplate {
                 angular: AngularMomentum::S,
                 primitives: vec![
@@ -244,7 +250,7 @@ END
             }],
         );
         expected.insert(
-            "C".to_string(),
+            element::CARBON,
             vec![
                 ShellTemplate {
                     angular: AngularMomentum::S,

@@ -29,20 +29,8 @@ fn atomic_number(element: &str) -> Result<u8> {
     }
 
     let symbol = element.to_ascii_lowercase();
-
-    let number = match symbol.as_str() {
-        "H" | "h" => 1,
-        "He" | "he" => 2,
-        "Li" | "li" => 3,
-        "Be" | "be" => 4,
-        "B" | "b" => 5,
-        "C" | "c" => 6,
-        "N" | "n" => 7,
-        "O" | "o" => 8,
-        "F" | "f" => 9,
-        "Ne" | "ne" => 10,
-        _ => return Err(anyhow!("Unknown element: {element}")),
-    };
+    let element = element::from_symbol(symbol);
+    let number = element.number;
 
     Ok(number)
 }

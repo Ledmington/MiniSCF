@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+element = { path = "../element" }
 clap = { version = "4.6.1", features = ["derive"] }
 reqwest = { version = "0.13.4", features = ["blocking"] }
 anyhow = "1.0.103"
