@@ -33,10 +33,10 @@ pub(crate) fn electron_repulsion(
         for prim_b in &b.shell.primitives {
             for prim_c in &c.shell.primitives {
                 for prim_d in &d.shell.primitives {
-                    sum += prim_a.contraction_coefficient()
-                        * prim_b.contraction_coefficient()
-                        * prim_c.contraction_coefficient()
-                        * prim_d.contraction_coefficient()
+                    sum += a.normalized_coefficient(prim_a)
+                        * b.normalized_coefficient(prim_b)
+                        * c.normalized_coefficient(prim_c)
+                        * d.normalized_coefficient(prim_d)
                         * primitive_eri(
                             (prim_a, &a.angular_momentum),
                             (prim_b, &b.angular_momentum),
