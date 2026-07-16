@@ -293,30 +293,6 @@ pub(crate) fn primitive_kinetic_energy(
     -0.5 * value
 }
 
-fn nuclear_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64, v_ss: f64) -> f64 {
-    fn e(i: i32, j: i32, t: i32, pa: f64, pb: f64, p: f64, v_ss: f64) -> f64 {
-        if t < 0 || t > i + j {
-            return 0.0;
-        }
-
-        if i == 0 && j == 0 {
-            return if t == 0 { v_ss } else { 0.0 };
-        }
-
-        if i > 0 {
-            return pa * e(i - 1, j, t, pa, pb, p, v_ss)
-                + (1.0 / (2.0 * p)) * e(i - 1, j, t - 1, pa, pb, p, v_ss)
-                + ((t + 1) as f64) * e(i - 1, j, t + 1, pa, pb, p, v_ss);
-        }
-
-        pb * e(i, j - 1, t, pa, pb, p, v_ss)
-            + (1.0 / (2.0 * p)) * e(i, j - 1, t - 1, pa, pb, p, v_ss)
-            + ((t + 1) as f64) * e(i, j - 1, t + 1, pa, pb, p, v_ss)
-    }
-
-    e(ia as i32, ib as i32, 0, pa, pb, p, v_ss)
-}
-
 pub(crate) fn primitive_nuclear_attraction(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
@@ -343,12 +319,12 @@ pub(crate) fn primitive_nuclear_attraction(
 
     let mut sum = 0.0;
 
-    for tx in 0..e_x.len() {
-        for ty in 0..e_y.len() {
-            for tz in 0..e_z.len() {
-                sum += e_x[tx]
-                    * e_y[ty]
-                    * e_z[tz]
+    for (tx, tx_elem) in e_x.iter().enumerate() {
+        for (ty, ty_elem) in e_y.iter().enumerate() {
+            for (tz, tz_elem) in e_z.iter().enumerate() {
+                sum += tx_elem
+                    * ty_elem
+                    * tz_elem
                     * boys(tx + ty + tz, t)
                     * (-2.0 * p).powi((tx + ty + tz) as i32);
             }

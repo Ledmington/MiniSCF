@@ -23,12 +23,12 @@ fn normalize_basis(name: &str) -> String {
     name.to_lowercase().replace('*', "_st_")
 }
 
-fn atomic_number(element: &str) -> Result<u8> {
-    if let Ok(num) = element.parse::<u8>() {
+fn atomic_number(symbol_or_number: &str) -> Result<u8> {
+    if let Ok(num) = symbol_or_number.parse::<u8>() {
         return Ok(num);
     }
 
-    let symbol = element.to_ascii_lowercase();
+    let symbol = symbol_or_number.to_ascii_lowercase();
     let element = element::from_symbol(symbol);
     let number = element.number;
 

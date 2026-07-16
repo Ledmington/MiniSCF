@@ -23,10 +23,6 @@ impl PrimitiveGaussian {
         }
     }
 
-    pub(crate) fn contraction_coefficient(&self) -> f64 {
-        self.contraction_coefficient
-    }
-
     pub(crate) fn alpha(&self) -> f64 {
         self.alpha
     }
