@@ -43,6 +43,10 @@ struct Args {
     /// Tolerance value for the SCF density
     #[arg(long, default_value_t = 1.0e-8)]
     p_tol: f64,
+
+    /// Minimum residual to reach
+    #[arg(long, default_value_t = 1.0e-15)]
+    min_residual: f64,
 }
 
 fn main() -> std::io::Result<()> {
@@ -100,7 +104,12 @@ fn main() -> std::io::Result<()> {
     }
     log::info!("Check complete.");
 
-    let opt_params = OptimizationParameters::new(args.max_iterations, args.e_tol, args.p_tol);
+    let opt_params = OptimizationParameters::new(
+        args.max_iterations,
+        args.e_tol,
+        args.p_tol,
+        args.min_residual,
+    );
 
     let c = run_rhf_simulation(&input_file.atoms, &basis, &opt_params);
 

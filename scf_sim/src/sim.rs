@@ -90,16 +90,19 @@ pub(crate) struct OptimizationParameters {
     max_iterations: usize,
     e_tol: f64,
     p_tol: f64,
+    min_residual: f64,
 }
 
 impl OptimizationParameters {
-    pub(crate) fn new(max_iterations: usize, e_tol: f64, p_tol: f64) -> Self {
+    pub(crate) fn new(max_iterations: usize, e_tol: f64, p_tol: f64, min_residual: f64) -> Self {
         assert!(e_tol > 0.0);
         assert!(p_tol > 0.0);
+        assert!(min_residual > 0.0);
         OptimizationParameters {
             max_iterations,
             e_tol,
             p_tol,
+            min_residual,
         }
     }
 }
@@ -286,6 +289,7 @@ pub(crate) fn run_rhf_simulation(
     log::info!(" Max Iterations : {}", opt_params.max_iterations);
     log::info!(" dE tolerance   : {:.6e}", opt_params.e_tol);
     log::info!(" dP tolerance   : {:.6e}", opt_params.p_tol);
+    log::info!(" Min residual   : {:.6e}", opt_params.min_residual);
     log::info!(" ### Optimization parameters ### ");
 
     let mut c;
@@ -296,6 +300,7 @@ pub(crate) fn run_rhf_simulation(
     let mut iter = 0;
     let mut delta_e;
     let mut delta_p;
+    let mut residual_norm;
 
     let loop_beginning = Instant::now();
     loop {
@@ -360,7 +365,7 @@ pub(crate) fn run_rhf_simulation(
         assert_matrix_approx_eq(&csc, &identity(n), 1e-10);
 
         let residual = &f.dot(&c) - &setup.s.dot(&c).dot(&Array2::from_diag(&orbital_energies));
-        let residual_norm = residual.norm();
+        residual_norm = residual.norm();
         log::debug!("||FC - SCE||                   : {:.6e}", residual_norm);
         assert!(
             residual_norm < 1e-8,
@@ -404,7 +409,7 @@ pub(crate) fn run_rhf_simulation(
             let elapsed = (Instant::now() - iteration_beginning).as_secs_f64();
             let throughput = ((iter + 1) as f64) / (Instant::now() - loop_beginning).as_secs_f64();
             log::info!(
-                "iter = {iter:3} | Ee = {e_elec:18.12} | En = {e_nuclear:18.12} | E = {e_total:18.12} | dE = {delta_e:.6e} | dP = {delta_p:.6e} | dt = {elapsed:.6e}s | thr. = {throughput:.6e} it/s"
+                "iter = {iter:3} | Ee = {e_elec:18.12} | En = {e_nuclear:18.12} | E = {e_total:18.12} | dE = {delta_e:.6e} | dP = {delta_p:.6e} | r = {residual_norm:.6e} | dt = {elapsed:.6e}s | thr. = {throughput:.6e} it/s"
             );
         }
 
@@ -413,6 +418,7 @@ pub(crate) fn run_rhf_simulation(
 
         if iter >= opt_params.max_iterations
             || (delta_e < opt_params.e_tol && delta_p < opt_params.p_tol)
+            || residual_norm < opt_params.min_residual
         {
             break;
         }
@@ -430,6 +436,8 @@ pub(crate) fn run_rhf_simulation(
         reason = "max iterations reached";
     } else if delta_e < opt_params.e_tol && delta_p < opt_params.p_tol {
         reason = "energy/density tolerance";
+    } else if residual_norm < opt_params.min_residual {
+        reason = "min residual reached";
     } else {
         reason = "UNKNOWN";
     }
