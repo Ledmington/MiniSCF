@@ -353,16 +353,14 @@ fn primitive_eri(
 
     let p_center = weighted_center(prim_a, prim_b, p);
     let q_center = weighted_center(prim_c, prim_d, q);
-
-    let pq2 = p_center.sub(&q_center).norm_squared();
+    let pq = p_center.sub(&q_center);
+    let pq2 = pq.norm_squared();
 
     let rho = p * q / (p + q);
 
     let boys_argument = rho * pq2;
 
-    //
     // Maximum auxiliary angular momentum
-    //
     let max_n = (la.0 + lb.0 + la.1 + lb.1 + la.2 + lb.2 + lc.0 + ld.0 + lc.1 + ld.1 + lc.2 + ld.2)
         as usize;
 
@@ -377,11 +375,7 @@ fn primitive_eri(
         max_tz,
         rho,
         boys_argument,
-        (
-            p_center.x - q_center.x,
-            p_center.y - q_center.y,
-            p_center.z - q_center.z,
-        ),
+        (pq.x, pq.y, pq.z),
     );
 
     let mut sum = 0.0;
@@ -395,7 +389,6 @@ fn primitive_eri(
                     for nu in 0..cd.e_y.len() {
                         for phi in 0..cd.e_z.len() {
                             let e2 = cd.e_x[tau] * cd.e_y[nu] * cd.e_z[phi];
-
                             sum += e1 * e2 * r.get(0, t + tau, u + nu, v + phi);
                         }
                     }
@@ -404,9 +397,7 @@ fn primitive_eri(
         }
     }
 
-    //
     // Overall ERI prefactor
-    //
     let prefactor = 2.0 * PI.powf(2.5) / (p * q * (p + q).sqrt());
 
     prefactor * ab.prefactor * cd.prefactor * sum
