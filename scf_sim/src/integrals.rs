@@ -321,46 +321,41 @@ pub(crate) fn primitive_nuclear_attraction(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
     nucleus: &Point,
-    angular_momentum_a: &(u8, u8, u8),
-    angular_momentum_b: &(u8, u8, u8),
+    la: &(u8, u8, u8),
+    lb: &(u8, u8, u8),
 ) -> f64 {
     let (p, mu, r2) = gaussian_pair_params(a, b);
 
     let center = weighted_center(a, b, p);
 
-    let r_p2 = center.sub(nucleus).norm_squared();
-
-    let v_ss = -((2.0 * PI / p) * (-mu * r2).exp() * boys_0(p * r_p2));
-
     let pa = center.sub(&a.center()).coordinates();
     let pb = center.sub(&b.center()).coordinates();
 
-    let ex = nuclear_1d(
-        angular_momentum_a.0,
-        angular_momentum_b.0,
-        pa[0],
-        pb[0],
-        p,
-        v_ss,
-    );
-    let ey = nuclear_1d(
-        angular_momentum_a.1,
-        angular_momentum_b.1,
-        pa[1],
-        pb[1],
-        p,
-        v_ss,
-    );
-    let ez = nuclear_1d(
-        angular_momentum_a.2,
-        angular_momentum_b.2,
-        pa[2],
-        pb[2],
-        p,
-        v_ss,
-    );
+    let e_x = hermite_coefficients(la.0, lb.0, pa[0], pb[0], p);
+    let e_y = hermite_coefficients(la.1, lb.1, pa[1], pb[1], p);
+    let e_z = hermite_coefficients(la.2, lb.2, pa[2], pb[2], p);
 
-    ex * ey * ez
+    let rpc2 = center.sub(nucleus).norm_squared();
+
+    let t = p * rpc2;
+
+    let prefactor = -2.0 * PI / p * (-mu * r2).exp();
+
+    let mut sum = 0.0;
+
+    for tx in 0..e_x.len() {
+        for ty in 0..e_y.len() {
+            for tz in 0..e_z.len() {
+                sum += e_x[tx]
+                    * e_y[ty]
+                    * e_z[tz]
+                    * boys(tx + ty + tz, t)
+                    * (-2.0 * p).powi((tx + ty + tz) as i32);
+            }
+        }
+    }
+
+    prefactor * sum
 }
 
 fn primitive_eri(

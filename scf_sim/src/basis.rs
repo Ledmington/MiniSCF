@@ -499,9 +499,7 @@ mod tests {
         };
 
         let actual = integrals::kinetic_energy(&bf, &bf);
-
         let expected = c * c * 1.5 * alpha;
-
         assert!(
             (actual - expected).abs() < 1e-10,
             "Expected kinetic energy between {:?} and itself to be {} but was {} (seed: {}).",
@@ -513,14 +511,14 @@ mod tests {
     }
 
     #[test]
-    fn nuclear_attraction_ss_same_center() {
+    fn unnormalized_nuclear_attraction_ss_same_center() {
         let alpha = 1.0;
         let nucleus = Point::new(0.0, 0.0, 0.0);
         let primitive = PrimitiveGaussian::new(1.0, alpha, nucleus);
 
         let actual =
             primitive_nuclear_attraction(&primitive, &primitive, &nucleus, &(0, 0, 0), &(0, 0, 0));
-        let expected = -2.0 * (2.0 * alpha / PI).sqrt();
+        let expected = -PI;
         assert!(
             (actual - expected).abs() < 1e-10,
             "Expected nuclear attraction between primtive {:?} and itself with a nucleus at its center to be {} but was {}.",
