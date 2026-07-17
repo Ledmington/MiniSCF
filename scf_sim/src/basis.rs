@@ -529,4 +529,79 @@ mod tests {
             "Expected (ss|ss) ERI to be {expected} but was {actual} (seed: {seed})."
         );
     }
+
+    #[test]
+    fn test_ssss_electron_repulsion_symmetry() {
+        let make_bf = |rng: &mut ChaCha8Rng| BasisFunction {
+            shell: Arc::new(Shell {
+                center: Point::new(
+                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-10.0..10.0),
+                ),
+                primitives: vec![PrimitiveGaussian::new(
+                    1.0,
+                    rng.random_range(0.1..5.0),
+                    Point::new(
+                        rng.random_range(-10.0..10.0),
+                        rng.random_range(-10.0..10.0),
+                        rng.random_range(-10.0..10.0),
+                    ),
+                )],
+            }),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        let a = make_bf(&mut rng);
+        let b = make_bf(&mut rng);
+        let c = make_bf(&mut rng);
+        let d = make_bf(&mut rng);
+
+        let abcd = integrals::electron_repulsion(&a, &b, &c, &d);
+
+        let abdc = integrals::electron_repulsion(&a, &b, &d, &c);
+        assert!(
+            (abcd - abdc).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (ab|dc) ERI ({abdc}) (seed: {seed})."
+        );
+
+        let bacd = integrals::electron_repulsion(&b, &a, &c, &d);
+        assert!(
+            (abcd - bacd).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (ba|cd) ERI ({bacd}) (seed: {seed})."
+        );
+
+        let badc = integrals::electron_repulsion(&b, &a, &d, &c);
+        assert!(
+            (abcd - badc).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (ba|dc) ERI ({badc}) (seed: {seed})."
+        );
+
+        let cdab = integrals::electron_repulsion(&c, &d, &a, &b);
+        assert!(
+            (abcd - cdab).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (cd|ab) ERI ({cdab}) (seed: {seed})."
+        );
+
+        let cdba = integrals::electron_repulsion(&c, &d, &b, &a);
+        assert!(
+            (abcd - cdba).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (cd|ba) ERI ({cdba}) (seed: {seed})."
+        );
+
+        let dcab = integrals::electron_repulsion(&d, &c, &a, &b);
+        assert!(
+            (abcd - dcab).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (dc|ab) ERI ({dcab}) (seed: {seed})."
+        );
+
+        let dcba = integrals::electron_repulsion(&d, &c, &b, &a);
+        assert!(
+            (abcd - dcba).abs() < 1e-10,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (dc|ba) ERI ({dcba}) (seed: {seed})."
+        );
+    }
 }
