@@ -460,4 +460,75 @@ mod tests {
             "Expected nuclear attraction between primitive {primitive:?} and itself with a nucleus at its center to be {expected} but was {actual}."
         );
     }
+
+    #[test]
+    fn test_single_normalized_s_primitive_electron_repulsion() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        let alpha = 0.5;
+        let primitive = PrimitiveGaussian::new(1.0, alpha, center);
+        let shell = Shell {
+            center,
+            primitives: vec![primitive],
+        };
+        let bf = BasisFunction {
+            shell: Arc::new(shell),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let actual = integrals::electron_repulsion(&bf, &bf, &bf, &bf);
+        let expected = 2.0 * alpha.sqrt() / PI.sqrt();
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected (ss|ss) ERI to be {expected} but was {actual} (seed: {seed})."
+        );
+    }
+
+    #[test]
+    fn test_ssss_electron_repulsion_same_center() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        let make_bf = |alpha| BasisFunction {
+            shell: Arc::new(Shell {
+                center,
+                primitives: vec![PrimitiveGaussian::new(1.0, alpha, center)],
+            }),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let alpha_1 = 0.5;
+        let alpha_2 = 1.0;
+        let alpha_3 = 1.5;
+        let alpha_4 = 2.0;
+
+        let a = make_bf(alpha_1);
+        let b = make_bf(alpha_2);
+        let c = make_bf(alpha_3);
+        let d = make_bf(alpha_4);
+
+        let actual = integrals::electron_repulsion(&a, &b, &c, &d);
+        let p = alpha_1 + alpha_2;
+        let q = alpha_3 + alpha_4;
+        let expected = (8.0 * 2.0_f64.sqrt() / PI.sqrt())
+            * (alpha_1 * alpha_2 * alpha_3 * alpha_4).powf(0.75)
+            / (p * q * (p + q).sqrt());
+        //  2.0 * (alpha_1 * alpha_2 * alpha_3 * alpha_4).sqrt()
+        //     / (PI.sqrt() * p.sqrt() * q.sqrt() * (p + q).sqrt());
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected (ss|ss) ERI to be {expected} but was {actual} (seed: {seed})."
+        );
+    }
 }
