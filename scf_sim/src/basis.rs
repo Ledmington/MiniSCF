@@ -8,7 +8,8 @@ use std::{f64::consts::PI, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PrimitiveGaussian {
-    contraction_coefficient: f64, // raw, does not include normalization
+    /// Raw, does not include normalization
+    contraction_coefficient: f64,
     alpha: f64,
     center: Point,
 }
@@ -521,11 +522,8 @@ mod tests {
         let actual = integrals::electron_repulsion(&a, &b, &c, &d);
         let p = alpha_1 + alpha_2;
         let q = alpha_3 + alpha_4;
-        let expected = (8.0 * 2.0_f64.sqrt() / PI.sqrt())
-            * (alpha_1 * alpha_2 * alpha_3 * alpha_4).powf(0.75)
+        let expected = (16.0 / PI.sqrt()) * (alpha_1 * alpha_2 * alpha_3 * alpha_4).powf(0.75)
             / (p * q * (p + q).sqrt());
-        //  2.0 * (alpha_1 * alpha_2 * alpha_3 * alpha_4).sqrt()
-        //     / (PI.sqrt() * p.sqrt() * q.sqrt() * (p + q).sqrt());
         assert!(
             (actual - expected).abs() < 1e-10,
             "Expected (ss|ss) ERI to be {expected} but was {actual} (seed: {seed})."
