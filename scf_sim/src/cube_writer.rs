@@ -221,7 +221,7 @@ pub(crate) fn dump_all_molecular_orbitals(
             c,
             mo_index,
             &grid,
-            format!("{}{}.cube", output_filename_prefix, mo_index),
+            format!("{output_filename_prefix}{mo_index}.cube"),
         )?;
     }
 

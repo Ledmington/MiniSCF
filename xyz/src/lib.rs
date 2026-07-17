@@ -16,7 +16,7 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
     let beginning = Instant::now();
     log::info!("Started reading input system from file '{path}'");
 
-    let file = File::open(path).map_err(|e| format!("failed to open file: {}", e))?;
+    let file = File::open(path).map_err(|e| format!("failed to open file: {e}."))?;
 
     let mut lines = BufReader::new(file).lines();
 
@@ -26,7 +26,7 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
         .map_err(|e| e.to_string())?
         .trim()
         .parse()
-        .map_err(|e| format!("invalid atom count: {}", e))?;
+        .map_err(|e| format!("invalid atom count: {e}."))?;
 
     // comment line
     let comment = lines
@@ -45,7 +45,7 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
         let parts: Vec<&str> = line.split_whitespace().collect();
 
         if parts.len() != 4 {
-            return Err(format!("invalid atom line: {}", line));
+            return Err(format!("invalid atom line: '{line}'."));
         }
 
         let symbol = parts[0].to_string();

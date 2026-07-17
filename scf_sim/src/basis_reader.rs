@@ -16,7 +16,7 @@ pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
     let beginning = Instant::now();
     log::info!("Started reading basis set from file '{path}'");
 
-    let text = fs::read_to_string(path).map_err(|e| format!("failed to open file: {}", e))?;
+    let text = fs::read_to_string(path).map_err(|e| format!("failed to open file: {e}"))?;
 
     let result = parse_nwchem_basis_text(&text);
 
@@ -261,8 +261,7 @@ END
 
         assert_eq!(
             expected, basis,
-            "Expected parsed basis set to be equal to {:?} but was {:?} (seed: {}).",
-            expected, basis, seed
+            "Expected parsed basis set to be equal to {expected:?} but was {basis:?} (seed: {seed})."
         );
     }
 
@@ -370,8 +369,7 @@ END
         };
         assert_eq!(
             expected, basis,
-            "Expected parsed basis set to be equal to {:?} but was {:?} (seed: {}).",
-            expected, basis, seed
+            "Expected parsed basis set to be equal to {expected:?} but was {basis:?} (seed: {seed})."
         );
     }
 }

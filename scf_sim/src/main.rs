@@ -95,10 +95,7 @@ fn main() -> std::io::Result<()> {
         let expected_overlap = 1.0;
         if (actual_overlap - expected_overlap).abs() > 1e-10 {
             log::warn!(
-                "The basis function {:?} is not normalized: expected overlap with itself to be {} but was {}.",
-                bf,
-                expected_overlap,
-                actual_overlap
+                "The basis function {bf:?} is not normalized: expected overlap with itself to be {expected_overlap} but was {actual_overlap}."
             );
         }
     }

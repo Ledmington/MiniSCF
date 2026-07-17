@@ -251,11 +251,7 @@ mod tests {
         let expected_overlap = 1.0;
         assert!(
             (actual_overlap - expected_overlap).abs() < 1e-10,
-            "Expected overlap between {:?} and itself to be {} but was {} (seed: {}).",
-            bf,
-            expected_overlap,
-            actual_overlap,
-            seed
+            "Expected overlap between {bf:?} and itself to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
         );
     }
 
@@ -294,11 +290,7 @@ mod tests {
             let expected_overlap = 1.0;
             assert!(
                 (actual_overlap - expected_overlap).abs() < 1e-10,
-                "Expected overlap between Px ({:?}) and itself to be {} but was {} (seed: {}).",
-                px,
-                expected_overlap,
-                actual_overlap,
-                seed
+                "Expected overlap between Px ({px:?}) and itself to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
             );
         }
 
@@ -307,11 +299,7 @@ mod tests {
             let expected_overlap = 1.0;
             assert!(
                 (actual_overlap - expected_overlap).abs() < 1e-10,
-                "Expected overlap between Py ({:?}) and itself to be {} but was {} (seed: {}).",
-                py,
-                expected_overlap,
-                actual_overlap,
-                seed
+                "Expected overlap between Py ({py:?}) and itself to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
             );
         }
 
@@ -320,11 +308,7 @@ mod tests {
             let expected_overlap = 1.0;
             assert!(
                 (actual_overlap - expected_overlap).abs() < 1e-10,
-                "Expected overlap between Pz ({:?}) and itself to be {} but was {} (seed: {}).",
-                pz,
-                expected_overlap,
-                actual_overlap,
-                seed
+                "Expected overlap between Pz ({pz:?}) and itself to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
             );
         }
     }
@@ -364,12 +348,7 @@ mod tests {
             let expected_overlap = 0.0;
             assert!(
                 (actual_overlap - expected_overlap).abs() < 1e-10,
-                "Expected overlap between Px ({:?}) and Py ({:?}) to be {} but was {} (seed: {}).",
-                px,
-                py,
-                expected_overlap,
-                actual_overlap,
-                seed
+                "Expected overlap between Px ({px:?}) and Py ({py:?}) to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
             );
         }
 
@@ -378,12 +357,7 @@ mod tests {
             let expected_overlap = 0.0;
             assert!(
                 (actual_overlap - expected_overlap).abs() < 1e-10,
-                "Expected overlap between Px ({:?}) and Pz ({:?}) to be {} but was {} (seed: {}).",
-                px,
-                pz,
-                expected_overlap,
-                actual_overlap,
-                seed
+                "Expected overlap between Px ({px:?}) and Pz ({pz:?}) to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
             );
         }
 
@@ -392,12 +366,7 @@ mod tests {
             let expected_overlap = 0.0;
             assert!(
                 (actual_overlap - expected_overlap).abs() < 1e-10,
-                "Expected overlap between Py ({:?}) and Pz ({:?}) to be {} but was {} (seed: {}).",
-                py,
-                pz,
-                expected_overlap,
-                actual_overlap,
-                seed
+                "Expected overlap between Py ({py:?}) and Pz ({pz:?}) to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
             );
         }
     }
@@ -436,11 +405,7 @@ mod tests {
 
         assert!(
             (actual - expected).abs() < 1e-10,
-            "Expected kinetic energy between {:?} and itself to be {} but was {} (seed: {}).",
-            bf,
-            expected,
-            actual,
-            seed
+            "Expected kinetic energy between {bf:?} and itself to be {expected} but was {actual} (seed: {seed})."
         );
     }
 
@@ -477,11 +442,7 @@ mod tests {
         let expected = c * c * 1.5 * alpha;
         assert!(
             (actual - expected).abs() < 1e-10,
-            "Expected kinetic energy between {:?} and itself to be {} but was {} (seed: {}).",
-            bf,
-            expected,
-            actual,
-            seed
+            "Expected kinetic energy between {bf:?} and itself to be {expected} but was {actual} (seed: {seed})."
         );
     }
 
@@ -496,10 +457,7 @@ mod tests {
         let expected = -PI;
         assert!(
             (actual - expected).abs() < 1e-10,
-            "Expected nuclear attraction between primtive {:?} and itself with a nucleus at its center to be {} but was {}.",
-            primitive,
-            expected,
-            actual,
+            "Expected nuclear attraction between primitive {primitive:?} and itself with a nucleus at its center to be {expected} but was {actual}."
         );
     }
 }

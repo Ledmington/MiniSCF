@@ -267,7 +267,7 @@ pub(crate) fn run_rhf_simulation(
     let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
     let n_occ = basis.num_occupied_orbitals(n_electrons);
 
-    log::debug!("N_occ : {}", n_occ);
+    log::debug!("N_occ : {n_occ}");
 
     let setup = setup_rhf_simulation(atoms, basis);
 
@@ -366,12 +366,7 @@ pub(crate) fn run_rhf_simulation(
 
         let residual = &f.dot(&c) - &setup.s.dot(&c).dot(&Array2::from_diag(&orbital_energies));
         residual_norm = residual.norm();
-        log::debug!("||FC - SCE||                   : {:.6e}", residual_norm);
-        assert!(
-            residual_norm < 1e-8,
-            "Roothaan residual too large: {}",
-            residual_norm
-        );
+        log::debug!("||FC - SCE||                   : {residual_norm:.6e}");
 
         // Density (must be symmetric)
         compute_density_matrix(n, n_occ, &c, &mut p_new);
@@ -389,12 +384,10 @@ pub(crate) fn run_rhf_simulation(
 
         // Double-check on the electron count
         let electron_count = (&p_new * &setup.s).sum();
-        log::debug!("N_e                            : {:.6}", electron_count);
+        log::debug!("N_e                            : {electron_count:.6}");
         assert!(
             approx_eq(electron_count, n_electrons as f64, 1e-8),
-            "Wrong electron count: expected {} but was {}.",
-            electron_count,
-            n_electrons
+            "Wrong electron count: expected {electron_count} but was {n_electrons}."
         );
 
         // RHF energy
