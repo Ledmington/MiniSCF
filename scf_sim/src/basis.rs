@@ -560,47 +560,49 @@ mod tests {
         let c = make_bf(&mut rng);
         let d = make_bf(&mut rng);
 
+        const TOLERANCE: f64 = 1e-10;
+
         let abcd = integrals::electron_repulsion(&a, &b, &c, &d);
 
         let abdc = integrals::electron_repulsion(&a, &b, &d, &c);
         assert!(
-            (abcd - abdc).abs() < 1e-10,
+            (abcd - abdc).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (ab|dc) ERI ({abdc}) (seed: {seed})."
         );
 
         let bacd = integrals::electron_repulsion(&b, &a, &c, &d);
         assert!(
-            (abcd - bacd).abs() < 1e-10,
+            (abcd - bacd).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (ba|cd) ERI ({bacd}) (seed: {seed})."
         );
 
         let badc = integrals::electron_repulsion(&b, &a, &d, &c);
         assert!(
-            (abcd - badc).abs() < 1e-10,
+            (abcd - badc).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (ba|dc) ERI ({badc}) (seed: {seed})."
         );
 
         let cdab = integrals::electron_repulsion(&c, &d, &a, &b);
         assert!(
-            (abcd - cdab).abs() < 1e-10,
+            (abcd - cdab).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (cd|ab) ERI ({cdab}) (seed: {seed})."
         );
 
         let cdba = integrals::electron_repulsion(&c, &d, &b, &a);
         assert!(
-            (abcd - cdba).abs() < 1e-10,
+            (abcd - cdba).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (cd|ba) ERI ({cdba}) (seed: {seed})."
         );
 
         let dcab = integrals::electron_repulsion(&d, &c, &a, &b);
         assert!(
-            (abcd - dcab).abs() < 1e-10,
+            (abcd - dcab).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (dc|ab) ERI ({dcab}) (seed: {seed})."
         );
 
         let dcba = integrals::electron_repulsion(&d, &c, &b, &a);
         assert!(
-            (abcd - dcba).abs() < 1e-10,
+            (abcd - dcba).abs() < TOLERANCE,
             "Expected (ab|cd) ERI ({abcd}) to be equal to (dc|ba) ERI ({dcba}) (seed: {seed})."
         );
     }
