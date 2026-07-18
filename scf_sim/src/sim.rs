@@ -239,15 +239,15 @@ fn check_electron_repulsion_integrals(eri: &Array4<f64>, tolerance: f64) {
                     let abcd = eri[[a, b, c, d]];
                     assert!(
                         approx_eq(abcd, eri[[b, a, c, d]], tolerance),
-                        "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{b}{a}|{c}{d}⟩"
+                        "ERROR: ERIs are not symmetric: ⟨{a}{b}|{c}{d}⟩ != ⟨{b}{a}|{c}{d}⟩"
                     );
                     assert!(
                         approx_eq(abcd, eri[[a, b, d, c]], tolerance),
-                        "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{a}{b}|{d}{c}⟩"
+                        "ERROR: ERIs are not symmetric: ⟨{a}{b}|{c}{d}⟩ != ⟨{a}{b}|{d}{c}⟩"
                     );
                     assert!(
                         approx_eq(abcd, eri[[c, d, a, b]], tolerance),
-                        "ERI: ⟨{a}{b}|{c}{d}⟩ != ⟨{c}{d}|{a}{b}⟩"
+                        "ERROR: ERIs are not symmetric: ⟨{a}{b}|{c}{d}⟩ != ⟨{c}{d}|{a}{b}⟩"
                     );
                 }
             }

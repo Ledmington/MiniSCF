@@ -8,7 +8,8 @@ use std::{f64::consts::PI, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct PrimitiveGaussian {
-    contraction_coefficient: f64, // raw, does not include normalization
+    /// Raw, does not include normalization
+    contraction_coefficient: f64,
     alpha: f64,
     center: Point,
 }
@@ -458,6 +459,151 @@ mod tests {
         assert!(
             (actual - expected).abs() < 1e-10,
             "Expected nuclear attraction between primitive {primitive:?} and itself with a nucleus at its center to be {expected} but was {actual}."
+        );
+    }
+
+    #[test]
+    fn test_single_normalized_s_primitive_electron_repulsion() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        let alpha = 0.5;
+        let primitive = PrimitiveGaussian::new(1.0, alpha, center);
+        let shell = Shell {
+            center,
+            primitives: vec![primitive],
+        };
+        let bf = BasisFunction {
+            shell: Arc::new(shell),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let actual = integrals::electron_repulsion(&bf, &bf, &bf, &bf);
+        let expected = 2.0 * alpha.sqrt() / PI.sqrt();
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected (ss|ss) ERI to be {expected} but was {actual} (seed: {seed})."
+        );
+    }
+
+    #[test]
+    fn test_ssss_electron_repulsion_same_center() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        let make_bf = |alpha| BasisFunction {
+            shell: Arc::new(Shell {
+                center,
+                primitives: vec![PrimitiveGaussian::new(1.0, alpha, center)],
+            }),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let alpha_1 = 0.5;
+        let alpha_2 = 1.0;
+        let alpha_3 = 1.5;
+        let alpha_4 = 2.0;
+
+        let a = make_bf(alpha_1);
+        let b = make_bf(alpha_2);
+        let c = make_bf(alpha_3);
+        let d = make_bf(alpha_4);
+
+        let actual = integrals::electron_repulsion(&a, &b, &c, &d);
+        let p = alpha_1 + alpha_2;
+        let q = alpha_3 + alpha_4;
+        let expected = (16.0 / PI.sqrt()) * (alpha_1 * alpha_2 * alpha_3 * alpha_4).powf(0.75)
+            / (p * q * (p + q).sqrt());
+        assert!(
+            (actual - expected).abs() < 1e-10,
+            "Expected (ss|ss) ERI to be {expected} but was {actual} (seed: {seed})."
+        );
+    }
+
+    #[test]
+    fn test_ssss_electron_repulsion_symmetry() {
+        let make_bf = |rng: &mut ChaCha8Rng| BasisFunction {
+            shell: Arc::new(Shell {
+                center: Point::new(
+                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-10.0..10.0),
+                    rng.random_range(-10.0..10.0),
+                ),
+                primitives: vec![PrimitiveGaussian::new(
+                    1.0,
+                    rng.random_range(0.1..5.0),
+                    Point::new(
+                        rng.random_range(-10.0..10.0),
+                        rng.random_range(-10.0..10.0),
+                        rng.random_range(-10.0..10.0),
+                    ),
+                )],
+            }),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        let a = make_bf(&mut rng);
+        let b = make_bf(&mut rng);
+        let c = make_bf(&mut rng);
+        let d = make_bf(&mut rng);
+
+        const TOLERANCE: f64 = 1e-10;
+
+        let abcd = integrals::electron_repulsion(&a, &b, &c, &d);
+
+        let abdc = integrals::electron_repulsion(&a, &b, &d, &c);
+        assert!(
+            (abcd - abdc).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (ab|dc) ERI ({abdc}) (seed: {seed})."
+        );
+
+        let bacd = integrals::electron_repulsion(&b, &a, &c, &d);
+        assert!(
+            (abcd - bacd).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (ba|cd) ERI ({bacd}) (seed: {seed})."
+        );
+
+        let badc = integrals::electron_repulsion(&b, &a, &d, &c);
+        assert!(
+            (abcd - badc).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (ba|dc) ERI ({badc}) (seed: {seed})."
+        );
+
+        let cdab = integrals::electron_repulsion(&c, &d, &a, &b);
+        assert!(
+            (abcd - cdab).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (cd|ab) ERI ({cdab}) (seed: {seed})."
+        );
+
+        let cdba = integrals::electron_repulsion(&c, &d, &b, &a);
+        assert!(
+            (abcd - cdba).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (cd|ba) ERI ({cdba}) (seed: {seed})."
+        );
+
+        let dcab = integrals::electron_repulsion(&d, &c, &a, &b);
+        assert!(
+            (abcd - dcab).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (dc|ab) ERI ({dcab}) (seed: {seed})."
+        );
+
+        let dcba = integrals::electron_repulsion(&d, &c, &b, &a);
+        assert!(
+            (abcd - dcba).abs() < TOLERANCE,
+            "Expected (ab|cd) ERI ({abcd}) to be equal to (dc|ba) ERI ({dcba}) (seed: {seed})."
         );
     }
 }
