@@ -1,60 +1,11 @@
 use crate::integrals;
 use crate::integrals::nuclear_attraction;
+use crate::primitive_gaussian::PrimitiveGaussian;
 use ndarray::Array2;
 use ndarray::Array4;
 use scf_core::Atom;
 use scf_core::point::Point;
-use std::{f64::consts::PI, sync::Arc};
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct PrimitiveGaussian {
-    /// Raw, does not include normalization
-    contraction_coefficient: f64,
-    alpha: f64,
-    center: Point,
-}
-
-impl PrimitiveGaussian {
-    pub(crate) fn new(contraction_coefficient: f64, alpha: f64, center: Point) -> Self {
-        assert!(alpha > 0.0);
-        PrimitiveGaussian {
-            contraction_coefficient,
-            alpha,
-            center,
-        }
-    }
-
-    pub(crate) fn alpha(&self) -> f64 {
-        self.alpha
-    }
-
-    pub(crate) fn center(&self) -> Point {
-        self.center
-    }
-
-    pub fn normalized_coefficient(&self, (lx, ly, lz): (u8, u8, u8)) -> f64 {
-        let numerator = (4.0 * self.alpha).powi((lx + ly + lz).into());
-
-        let denominator = double_factorial(2 * lx as i32 - 1)
-            * double_factorial(2 * ly as i32 - 1)
-            * double_factorial(2 * lz as i32 - 1);
-
-        ((2.0 * self.alpha) / PI).powf(0.75) * (numerator / (denominator as f64)).sqrt()
-    }
-}
-
-fn double_factorial(mut n: i32) -> i32 {
-    assert!(n >= -1);
-    if n <= 1 {
-        return 1;
-    }
-    let mut s = 1;
-    while n > 1 {
-        s *= n;
-        n -= 2;
-    }
-    s
-}
+use std::sync::Arc;
 
 #[derive(Debug, PartialEq)]
 pub struct BasisSet {
@@ -175,6 +126,7 @@ pub(crate) enum AngularMomentum {
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct Shell {
     pub(crate) center: Point,
+    pub(crate) contraction_coefficients: Vec<f64>,
     pub(crate) primitives: Vec<PrimitiveGaussian>,
 }
 
@@ -197,7 +149,7 @@ impl BasisFunction {
         let gaussian: f64 = shell
             .primitives
             .iter()
-            .map(|p| self.normalized_coefficient(p) * (-p.alpha * r2).exp())
+            .map(|p| p.normalization_constant() * (-p.alpha() * r2).exp())
             .sum();
 
         let angular = match self.angular_momentum {
@@ -213,14 +165,12 @@ impl BasisFunction {
 
         gaussian * angular
     }
-
-    pub fn normalized_coefficient(&self, p: &PrimitiveGaussian) -> f64 {
-        p.contraction_coefficient * p.normalized_coefficient(self.angular_momentum)
-    }
 }
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::PI;
+
     use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
 
     use crate::integrals::primitive_nuclear_attraction;
@@ -238,10 +188,11 @@ mod tests {
         );
         let shell = Shell {
             center,
+            contraction_coefficients: vec![3.425250914, 0.6239137298, 0.168855404],
             primitives: vec![
-                PrimitiveGaussian::new(0.1543289673, 3.425250914, center),
-                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center),
-                PrimitiveGaussian::new(0.4446345422, 0.168855404, center),
+                PrimitiveGaussian::new(0, 0, 0, 0.1543289673, center),
+                PrimitiveGaussian::new(0, 0, 0, 0.5353281423, center),
+                PrimitiveGaussian::new(0, 0, 0, 0.4446345422, center),
             ],
         };
         let bf = BasisFunction {
@@ -268,10 +219,11 @@ mod tests {
         let shell = Shell {
             center,
             primitives: vec![
-                PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
-                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
-                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                PrimitiveGaussian::new(1, 0, 0, 0.1559162750, center),
+                PrimitiveGaussian::new(0, 1, 0, 0.6076837186, center),
+                PrimitiveGaussian::new(0, 0, 1, 0.3919573931, center),
             ],
+            contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
         };
         let px = BasisFunction {
             shell: Arc::new(shell.clone()),
@@ -326,10 +278,11 @@ mod tests {
         let shell = Shell {
             center,
             primitives: vec![
-                PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
-                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
-                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                PrimitiveGaussian::new(1, 0, 0, 0.1559162750, center),
+                PrimitiveGaussian::new(0, 1, 0, 0.6076837186, center),
+                PrimitiveGaussian::new(0, 0, 1, 0.3919573931, center),
             ],
+            contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
         };
         let px = BasisFunction {
             shell: Arc::new(shell.clone()),
@@ -384,15 +337,12 @@ mod tests {
 
         let alpha = 0.5;
 
-        let primitive = PrimitiveGaussian {
-            alpha,
-            contraction_coefficient: 1.0,
-            center,
-        };
+        let primitive = PrimitiveGaussian::new(0, 0, 0, alpha, center);
 
         let shell = Shell {
-            center: primitive.center,
+            center: *primitive.center(),
             primitives: vec![primitive],
+            contraction_coefficients: vec![1.0],
         };
 
         let bf = BasisFunction {
@@ -423,15 +373,12 @@ mod tests {
         let alpha = 0.5;
         let c = 0.7;
 
-        let primitive = PrimitiveGaussian {
-            alpha,
-            contraction_coefficient: c,
-            center,
-        };
+        let primitive = PrimitiveGaussian::new(0, 0, 0, alpha, center);
 
         let shell = Shell {
-            center: primitive.center,
+            center: *primitive.center(),
             primitives: vec![primitive],
+            contraction_coefficients: vec![1.0],
         };
 
         let bf = BasisFunction {
@@ -451,7 +398,7 @@ mod tests {
     fn unnormalized_nuclear_attraction_ss_same_center() {
         let alpha = 1.0;
         let nucleus = Point::new(0.0, 0.0, 0.0);
-        let primitive = PrimitiveGaussian::new(1.0, alpha, nucleus);
+        let primitive = PrimitiveGaussian::new(0, 0, 0, alpha, nucleus);
 
         let actual =
             primitive_nuclear_attraction(&primitive, &primitive, &nucleus, &(0, 0, 0), &(0, 0, 0));
@@ -472,11 +419,12 @@ mod tests {
             rng.random_range(-10.0..10.0),
         );
 
-        let alpha = 0.5;
-        let primitive = PrimitiveGaussian::new(1.0, alpha, center);
+        let alpha: f64 = 0.5;
+        let primitive = PrimitiveGaussian::new(0, 0, 0, alpha, center);
         let shell = Shell {
             center,
             primitives: vec![primitive],
+            contraction_coefficients: vec![1.0],
         };
         let bf = BasisFunction {
             shell: Arc::new(shell),
@@ -504,15 +452,16 @@ mod tests {
         let make_bf = |alpha| BasisFunction {
             shell: Arc::new(Shell {
                 center,
-                primitives: vec![PrimitiveGaussian::new(1.0, alpha, center)],
+                primitives: vec![PrimitiveGaussian::new(0, 0, 0, alpha, center)],
+                contraction_coefficients: vec![1.0],
             }),
             angular_momentum: (0, 0, 0),
         };
 
-        let alpha_1 = 0.5;
-        let alpha_2 = 1.0;
-        let alpha_3 = 1.5;
-        let alpha_4 = 2.0;
+        let alpha_1: f64 = 0.5;
+        let alpha_2: f64 = 1.0;
+        let alpha_3: f64 = 1.5;
+        let alpha_4: f64 = 2.0;
 
         let a = make_bf(alpha_1);
         let b = make_bf(alpha_2);
@@ -540,7 +489,9 @@ mod tests {
                     rng.random_range(-10.0..10.0),
                 ),
                 primitives: vec![PrimitiveGaussian::new(
-                    1.0,
+                    0,
+                    0,
+                    0,
                     rng.random_range(0.1..5.0),
                     Point::new(
                         rng.random_range(-10.0..10.0),
@@ -548,6 +499,7 @@ mod tests {
                         rng.random_range(-10.0..10.0),
                     ),
                 )],
+                contraction_coefficients: vec![1.0],
             }),
             angular_momentum: (0, 0, 0),
         };

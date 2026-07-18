@@ -2,7 +2,6 @@
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct Point {
-    // TODO: make private and use getters
     pub x: f64,
     pub y: f64,
     pub z: f64,

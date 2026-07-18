@@ -2,7 +2,7 @@ use std::f64::consts::PI;
 
 use scf_core::{Atom, point::Point};
 
-use crate::basis::{BasisFunction, PrimitiveGaussian};
+use crate::{basis::BasisFunction, primitive_gaussian::PrimitiveGaussian};
 
 pub fn overlap(a: &BasisFunction, b: &BasisFunction) -> f64 {
     contracted_pair(a, b, primitive_overlap)
@@ -33,10 +33,10 @@ pub(crate) fn electron_repulsion(
         for prim_b in &b.shell.primitives {
             for prim_c in &c.shell.primitives {
                 for prim_d in &d.shell.primitives {
-                    sum += a.normalized_coefficient(prim_a)
-                        * b.normalized_coefficient(prim_b)
-                        * c.normalized_coefficient(prim_c)
-                        * d.normalized_coefficient(prim_d)
+                    sum += prim_a.normalization_constant()
+                        * prim_b.normalization_constant()
+                        * prim_c.normalization_constant()
+                        * prim_d.normalization_constant()
                         * primitive_eri(
                             (prim_a, &a.angular_momentum),
                             (prim_b, &b.angular_momentum),
@@ -59,8 +59,8 @@ fn contracted_pair(
     let mut sum = 0.0;
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
-            sum += a.normalized_coefficient(pa)
-                * b.normalized_coefficient(pb)
+            sum += pa.normalization_constant()
+                * pb.normalization_constant()
                 * f(pa, pb, &a.angular_momentum, &b.angular_momentum);
         }
     }
@@ -77,8 +77,8 @@ fn contracted_pair_with_nucleus(
     let mut sum = 0.0;
     for pa in &a.shell.primitives {
         for pb in &b.shell.primitives {
-            sum += a.normalized_coefficient(pa)
-                * b.normalized_coefficient(pb)
+            sum += pa.normalization_constant()
+                * pb.normalization_constant()
                 * f(pa, pb, nucleus, &a.angular_momentum, &b.angular_momentum);
         }
     }
@@ -529,8 +529,8 @@ mod tests {
 
     #[test]
     fn test_hermite_pair_swap_symmetry() {
-        let a = PrimitiveGaussian::new(1.0, 0.5, Point::new(0.2, -0.3, 0.7));
-        let b = PrimitiveGaussian::new(1.0, 1.1, Point::new(-0.4, 0.6, -0.2));
+        let a = PrimitiveGaussian::new(0, 0, 0, 0.5, Point::new(0.2, -0.3, 0.7));
+        let b = PrimitiveGaussian::new(0, 0, 0, 1.1, Point::new(-0.4, 0.6, -0.2));
 
         let ab = hermite_pair(&a, &b, &(0, 0, 0), &(1, 0, 1));
         let ba = hermite_pair(&b, &a, &(1, 0, 1), &(0, 0, 0));
@@ -543,10 +543,10 @@ mod tests {
 
     #[test]
     fn test_primitive_eri_pair_exchange_symmetry() {
-        let a = PrimitiveGaussian::new(1.0, 0.5, Point::new(0.0, 0.0, 0.0));
-        let b = PrimitiveGaussian::new(1.0, 0.8, Point::new(0.0, 0.0, 0.0));
-        let c = PrimitiveGaussian::new(1.0, 1.2, Point::new(1.0, 0.0, 0.0));
-        let d = PrimitiveGaussian::new(1.0, 0.7, Point::new(1.0, 0.0, 0.0));
+        let a = PrimitiveGaussian::new(0, 0, 0, 0.5, Point::new(0.0, 0.0, 0.0));
+        let b = PrimitiveGaussian::new(0, 0, 0, 0.8, Point::new(0.0, 0.0, 0.0));
+        let c = PrimitiveGaussian::new(0, 0, 0, 1.2, Point::new(1.0, 0.0, 0.0));
+        let d = PrimitiveGaussian::new(0, 0, 0, 0.7, Point::new(1.0, 0.0, 0.0));
 
         let ab = primitive_eri(
             (&a, &(0, 0, 0)),
@@ -575,19 +575,21 @@ mod tests {
 
         let shell1 = Shell {
             center: center1,
+            contraction_coefficients: vec![3.425250914, 0.6239137298, 0.168855404],
             primitives: vec![
-                PrimitiveGaussian::new(0.1543289673, 3.425250914, center1),
-                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center1),
-                PrimitiveGaussian::new(0.4446345422, 0.168855404, center1),
+                PrimitiveGaussian::new(0, 0, 0, 0.1543289673, center1),
+                PrimitiveGaussian::new(0, 0, 0, 0.5353281423, center1),
+                PrimitiveGaussian::new(0, 0, 0, 0.4446345422, center1),
             ],
         };
 
         let shell2 = Shell {
             center: center2,
+            contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
             primitives: vec![
-                PrimitiveGaussian::new(0.1559162750, 2.941249355, center2),
-                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center2),
-                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center2),
+                PrimitiveGaussian::new(0, 0, 0, 0.1559162750, center2),
+                PrimitiveGaussian::new(0, 0, 0, 0.6076837186, center2),
+                PrimitiveGaussian::new(0, 0, 0, 0.3919573931, center2),
             ],
         };
 
@@ -619,10 +621,10 @@ mod tests {
             (0, 0, 2),
         ];
 
-        let a = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
-        let b = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
-        let c = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
-        let d = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let a = PrimitiveGaussian::new(0, 0, 0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let b = PrimitiveGaussian::new(0, 0, 0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let c = PrimitiveGaussian::new(0, 0, 0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let d = PrimitiveGaussian::new(0, 0, 0, 1.0, Point::new(0.0, 0.0, 0.0));
 
         for &la in &functions {
             for &lb in &functions {

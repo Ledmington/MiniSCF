@@ -2,7 +2,10 @@ use element::Element;
 use scf_core::Atom;
 use std::{collections::HashMap, fs, time::Instant};
 
-use crate::basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell};
+use crate::{
+    basis::{AngularMomentum, BasisSet, Shell},
+    primitive_gaussian::PrimitiveGaussian,
+};
 
 #[derive(PartialEq, Debug)]
 pub struct ShellTemplate {
@@ -151,8 +154,8 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
                     let primitives = template
                         .primitives
                         .iter()
-                        .map(|&(exponent, coeff)| {
-                            PrimitiveGaussian::new(coeff, exponent, atom.position)
+                        .map(|&(exponent, _)| {
+                            PrimitiveGaussian::new(0, 0, 0, exponent, atom.position)
                         })
                         .collect();
 
@@ -160,25 +163,33 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
                         Shell {
                             center: atom.position,
                             primitives,
+                            contraction_coefficients: template
+                                .primitives
+                                .iter()
+                                .map(|&(_, coeff)| coeff)
+                                .collect(),
                         },
                         (0, 0, 0),
                     ));
                 }
 
                 AngularMomentum::P => {
-                    let primitives: Vec<PrimitiveGaussian> = template
-                        .primitives
-                        .iter()
-                        .map(|&(exponent, coeff)| {
-                            PrimitiveGaussian::new(coeff, exponent, atom.position)
-                        })
-                        .collect();
+                    let primitives: Vec<PrimitiveGaussian> = vec![
+                        PrimitiveGaussian::new(1, 0, 0, template.primitives[0].0, atom.position),
+                        PrimitiveGaussian::new(0, 1, 0, template.primitives[1].0, atom.position),
+                        PrimitiveGaussian::new(0, 0, 1, template.primitives[2].0, atom.position),
+                    ];
 
                     // px
                     shells.push((
                         Shell {
                             center: atom.position,
                             primitives: primitives.clone(),
+                            contraction_coefficients: template
+                                .primitives
+                                .iter()
+                                .map(|&(_, coeff)| coeff)
+                                .collect(),
                         },
                         (1, 0, 0),
                     ));
@@ -187,6 +198,11 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
                         Shell {
                             center: atom.position,
                             primitives: primitives.clone(),
+                            contraction_coefficients: template
+                                .primitives
+                                .iter()
+                                .map(|&(_, coeff)| coeff)
+                                .collect(),
                         },
                         (0, 1, 0),
                     ));
@@ -195,6 +211,11 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
                         Shell {
                             center: atom.position,
                             primitives,
+                            contraction_coefficients: template
+                                .primitives
+                                .iter()
+                                .map(|&(_, coeff)| coeff)
+                                .collect(),
                         },
                         (0, 0, 1),
                     ));
@@ -247,10 +268,11 @@ END
         let shell = Shell {
             center,
             primitives: vec![
-                PrimitiveGaussian::new(0.1543289673, 3.425250914, center),
-                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center),
-                PrimitiveGaussian::new(0.4446345422, 0.168855404, center),
+                PrimitiveGaussian::new(0, 0, 0, 0.1543289673, center),
+                PrimitiveGaussian::new(0, 0, 0, 0.5353281423, center),
+                PrimitiveGaussian::new(0, 0, 0, 0.4446345422, center),
             ],
+            contraction_coefficients: vec![3.425250914, 0.6239137298, 0.168855404],
         };
         let expected = BasisSet {
             functions: vec![BasisFunction {
@@ -310,10 +332,11 @@ END
                     shell: Arc::new(Shell {
                         center,
                         primitives: vec![
-                            PrimitiveGaussian::new(0.1543289673, 71.61683735, center),
-                            PrimitiveGaussian::new(0.5353281423, 13.04509632, center),
-                            PrimitiveGaussian::new(0.4446345422, 3.530512160, center),
+                            PrimitiveGaussian::new(0, 0, 0, 0.1543289673, center),
+                            PrimitiveGaussian::new(0, 0, 0, 0.5353281423, center),
+                            PrimitiveGaussian::new(0, 0, 0, 0.4446345422, center),
                         ],
+                        contraction_coefficients: vec![71.61683735, 13.04509632, 3.530512160],
                     }),
                     angular_momentum: (0, 0, 0),
                 },
@@ -322,10 +345,11 @@ END
                     shell: Arc::new(Shell {
                         center,
                         primitives: vec![
-                            PrimitiveGaussian::new(-0.09996722919, 2.941249355, center),
-                            PrimitiveGaussian::new(0.3995128261, 0.6834830964, center),
-                            PrimitiveGaussian::new(0.7001154689, 0.2222899159, center),
+                            PrimitiveGaussian::new(0, 0, 0, -0.09996722919, center),
+                            PrimitiveGaussian::new(0, 0, 0, 0.3995128261, center),
+                            PrimitiveGaussian::new(0, 0, 0, 0.7001154689, center),
                         ],
+                        contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
                     }),
                     angular_momentum: (0, 0, 0),
                 },
@@ -334,10 +358,11 @@ END
                     shell: Arc::new(Shell {
                         center,
                         primitives: vec![
-                            PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
-                            PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
-                            PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                            PrimitiveGaussian::new(1, 0, 0, 0.1559162750, center),
+                            PrimitiveGaussian::new(1, 0, 0, 0.6076837186, center),
+                            PrimitiveGaussian::new(1, 0, 0, 0.3919573931, center),
                         ],
+                        contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
                     }),
                     angular_momentum: (1, 0, 0),
                 },
@@ -346,10 +371,11 @@ END
                     shell: Arc::new(Shell {
                         center,
                         primitives: vec![
-                            PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
-                            PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
-                            PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                            PrimitiveGaussian::new(0, 1, 0, 0.1559162750, center),
+                            PrimitiveGaussian::new(0, 1, 0, 0.6076837186, center),
+                            PrimitiveGaussian::new(0, 1, 0, 0.3919573931, center),
                         ],
+                        contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
                     }),
                     angular_momentum: (0, 1, 0),
                 },
@@ -358,10 +384,11 @@ END
                     shell: Arc::new(Shell {
                         center,
                         primitives: vec![
-                            PrimitiveGaussian::new(0.1559162750, 2.941249355, center),
-                            PrimitiveGaussian::new(0.6076837186, 0.6834830964, center),
-                            PrimitiveGaussian::new(0.3919573931, 0.2222899159, center),
+                            PrimitiveGaussian::new(0, 0, 1, 0.1559162750, center),
+                            PrimitiveGaussian::new(0, 0, 1, 0.6076837186, center),
+                            PrimitiveGaussian::new(0, 0, 1, 0.3919573931, center),
                         ],
+                        contraction_coefficients: vec![2.941249355, 0.6834830964, 0.2222899159],
                     }),
                     angular_momentum: (0, 0, 1),
                 },
