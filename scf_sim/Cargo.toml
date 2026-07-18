@@ -15,6 +15,7 @@ simple_logger = "5.2.0"
 
 [dev-dependencies]
 rand = { version = "0.10.1", features = ["chacha"] }
+rstest = "0.26.1"
 
 [lints]
 workspace = true

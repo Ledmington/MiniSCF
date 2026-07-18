@@ -456,3 +456,32 @@ fn boys(n: usize, t: f64) -> f64 {
 
     f
 }
+
+#[cfg(test)]
+mod tests {
+    use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
+    use rstest::rstest;
+
+    use super::*;
+
+    #[rstest]
+    #[case(0, 0)]
+    #[case(0, 1)]
+    #[case(1, 1)]
+    #[case(0, 2)]
+    fn test_symmetric_hermite_coefficients(#[case] ia: u8, #[case] ib: u8) {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        let pa = rng.random_range(0.0..10.0);
+        let pb = rng.random_range(0.0..10.0);
+        let p = rng.random_range(0.0..10.0);
+
+        let ab = hermite_coefficients(ia, ib, pa, pb, p);
+        let ba = hermite_coefficients(ib, ia, pb, pa, p);
+        assert_eq!(
+            ab, ba,
+            "Expected hermite coefficients for AB ({ab:?}) to be equal to those for BA ({ba:?}) (seed: {seed})."
+        );
+    }
+}
