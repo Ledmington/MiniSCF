@@ -224,6 +224,8 @@ fn hermite_coefficients(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> Vec<f64> {
 }
 
 /// McMurchie-Davidson recurrence
+/// Source: One- and Two-electron integrals over cartesian gaussian functions
+/// DOI: https://doi.org/10.1016/0021-9991(78)90092-X
 fn overlap_1d(ia: u8, ib: u8, pa: f64, pb: f64, p: f64) -> f64 {
     (PI / p).sqrt() * hermite_coefficient(ia, ib, 0, pa, pb, p)
 }
@@ -459,8 +461,12 @@ fn boys(n: usize, t: f64) -> f64 {
 
 #[cfg(test)]
 mod tests {
+    use std::sync::Arc;
+
     use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
     use rstest::rstest;
+
+    use crate::basis::Shell;
 
     use super::*;
 
@@ -479,9 +485,159 @@ mod tests {
 
         let ab = hermite_coefficients(ia, ib, pa, pb, p);
         let ba = hermite_coefficients(ib, ia, pb, pa, p);
-        assert_eq!(
-            ab, ba,
+        assert_eq!(ab.len(), ba.len());
+        assert!(
+            (0..ab.len())
+                .map(|i| (ab[i] - ba[i]).abs())
+                .reduce(|a, b| if a > b { a } else { b })
+                .unwrap()
+                < 1e-10,
             "Expected hermite coefficients for AB ({ab:?}) to be equal to those for BA ({ba:?}) (seed: {seed})."
         );
+    }
+
+    #[test]
+    fn test_rcoulomb_parity() {
+        let rho = 0.7;
+        let t = 1.2;
+
+        let x = 0.8;
+        let y = -0.3;
+        let z = 1.1;
+
+        let r1 = RCoulomb::new(2, 2, 2, 2, rho, t, (x, y, z));
+        let r2 = RCoulomb::new(2, 2, 2, 2, rho, t, (-x, -y, -z));
+
+        let eps = 1e-12;
+
+        for tx in 0..=2 {
+            for ty in 0..=2 {
+                for tz in 0..=2 {
+                    let sign = if (tx + ty + tz) % 2 == 0 { 1.0 } else { -1.0 };
+
+                    assert!(
+                        (r1.get(0, tx, ty, tz) - sign * r2.get(0, tx, ty, tz)).abs() < eps,
+                        "({}, {}, {}) failed",
+                        tx,
+                        ty,
+                        tz,
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn test_hermite_pair_swap_symmetry() {
+        let a = PrimitiveGaussian::new(1.0, 0.5, Point::new(0.2, -0.3, 0.7));
+        let b = PrimitiveGaussian::new(1.0, 1.1, Point::new(-0.4, 0.6, -0.2));
+
+        let ab = hermite_pair(&a, &b, &(0, 0, 0), &(1, 0, 1));
+        let ba = hermite_pair(&b, &a, &(1, 0, 1), &(0, 0, 0));
+
+        assert_eq!(ab.e_x, ba.e_x);
+        assert_eq!(ab.e_y, ba.e_y);
+        assert_eq!(ab.e_z, ba.e_z);
+        assert_eq!(ab.prefactor, ba.prefactor);
+    }
+
+    #[test]
+    fn test_primitive_eri_pair_exchange_symmetry() {
+        let a = PrimitiveGaussian::new(1.0, 0.5, Point::new(0.0, 0.0, 0.0));
+        let b = PrimitiveGaussian::new(1.0, 0.8, Point::new(0.0, 0.0, 0.0));
+        let c = PrimitiveGaussian::new(1.0, 1.2, Point::new(1.0, 0.0, 0.0));
+        let d = PrimitiveGaussian::new(1.0, 0.7, Point::new(1.0, 0.0, 0.0));
+
+        let ab = primitive_eri(
+            (&a, &(0, 0, 0)),
+            (&b, &(0, 0, 0)),
+            (&c, &(1, 0, 0)),
+            (&d, &(1, 1, 0)),
+        );
+
+        let cd = primitive_eri(
+            (&c, &(1, 0, 0)),
+            (&d, &(1, 1, 0)),
+            (&a, &(0, 0, 0)),
+            (&b, &(0, 0, 0)),
+        );
+
+        assert!(
+            (ab - cd).abs() < 1e-12,
+            "primitive ERI symmetry broken: {ab} vs {cd}"
+        );
+    }
+
+    #[test]
+    fn test_contracted_eri_pair_exchange_symmetry() {
+        let center1 = Point::new(0.0, 0.0, 0.0);
+        let center2 = Point::new(1.0, 0.0, 0.0);
+
+        let shell1 = Shell {
+            center: center1,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1543289673, 3.425250914, center1),
+                PrimitiveGaussian::new(0.5353281423, 0.6239137298, center1),
+                PrimitiveGaussian::new(0.4446345422, 0.168855404, center1),
+            ],
+        };
+
+        let shell2 = Shell {
+            center: center2,
+            primitives: vec![
+                PrimitiveGaussian::new(0.1559162750, 2.941249355, center2),
+                PrimitiveGaussian::new(0.6076837186, 0.6834830964, center2),
+                PrimitiveGaussian::new(0.3919573931, 0.2222899159, center2),
+            ],
+        };
+
+        let s = BasisFunction {
+            shell: Arc::new(shell1),
+            angular_momentum: (0, 0, 0),
+        };
+
+        let d = BasisFunction {
+            shell: Arc::new(shell2),
+            angular_momentum: (2, 0, 0),
+        };
+
+        let sd = electron_repulsion(&s, &s, &d, &d);
+        let ds = electron_repulsion(&d, &d, &s, &s);
+
+        assert!((sd - ds).abs() < 1e-12, "(ss|dd) != (dd|ss): {} {}", sd, ds);
+    }
+
+    #[test]
+    fn test_all_pair_exchange_cartesian() {
+        let functions = [
+            (0, 0, 0),
+            (1, 0, 0),
+            (0, 1, 0),
+            (0, 0, 1),
+            (2, 0, 0),
+            (1, 1, 0),
+            (0, 0, 2),
+        ];
+
+        let a = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let b = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let c = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
+        let d = PrimitiveGaussian::new(1.0, 1.0, Point::new(0.0, 0.0, 0.0));
+
+        for &la in &functions {
+            for &lb in &functions {
+                for &lc in &functions {
+                    for &ld in &functions {
+                        let x = primitive_eri((&a, &la), (&b, &lb), (&c, &lc), (&d, &ld));
+                        let y = primitive_eri((&c, &lc), (&d, &ld), (&a, &la), (&b, &lb));
+
+                        assert!(
+                            (x - y).abs() < 1e-10,
+                            "failed ({la:?}{lb:?}|{lc:?}{ld:?}) {x} {y}"
+                        );
+                    }
+                }
+            }
+        }
     }
 }
