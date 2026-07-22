@@ -1447,6 +1447,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "rhf_sim"
+version = "0.1.0"
+dependencies = [
+ "clap",
+ "log",
+ "scf_sim",
+ "simple_logger",
+ "xyz",
+]
+
+[[package]]
 name = "ring"
 version = "0.17.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1620,7 +1631,6 @@ dependencies = [
 name = "scf_sim"
 version = "0.1.0"
 dependencies = [
- "clap",
  "element",
  "log",
  "ndarray",
@@ -1629,7 +1639,6 @@ dependencies = [
  "rstest",
  "scf_core",
  "simple_logger",
- "xyz",
 ]
 
 [[package]]

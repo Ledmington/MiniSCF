@@ -6,8 +6,6 @@ edition = "2024"
 [dependencies]
 element = { path = "../element" }
 scf_core = { path = "../scf_core" }
-xyz = { path = "../xyz" }
-clap = { version = "4.6.1", features = ["derive"] }
 ndarray = "0.17.2"
 ndarray-linalg = { version = "0.18.1", features = ["openblas-system"] }
 log = "0.4.33"

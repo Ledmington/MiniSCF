@@ -1,0 +1,16 @@
+[package]
+name = "rhf_sim"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+scf_sim = { path = "../scf_sim" }
+xyz = { path = "../xyz" }
+clap = { version = "4.6.1", features = ["derive"] }
+log = "0.4.33"
+simple_logger = "5.2.0"
+
+[dev-dependencies]
+
+[lints]
+workspace = true

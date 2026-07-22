@@ -86,7 +86,7 @@ fn nuclear_repulsion_energy(atoms: &[Atom]) -> f64 {
     e
 }
 
-pub(crate) struct OptimizationParameters {
+pub struct OptimizationParameters {
     max_iterations: usize,
     e_tol: f64,
     p_tol: f64,
@@ -94,7 +94,7 @@ pub(crate) struct OptimizationParameters {
 }
 
 impl OptimizationParameters {
-    pub(crate) fn new(max_iterations: usize, e_tol: f64, p_tol: f64, min_residual: f64) -> Self {
+    pub fn new(max_iterations: usize, e_tol: f64, p_tol: f64, min_residual: f64) -> Self {
         assert!(e_tol > 0.0);
         assert!(p_tol > 0.0);
         assert!(min_residual > 0.0);
@@ -255,7 +255,7 @@ fn check_electron_repulsion_integrals(eri: &Array4<f64>, tolerance: f64) {
     }
 }
 
-pub(crate) fn run_rhf_simulation(
+pub fn run_rhf_simulation(
     atoms: &[Atom],
     basis: &BasisSet,
     opt_params: &OptimizationParameters,

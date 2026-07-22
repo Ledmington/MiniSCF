@@ -200,7 +200,7 @@ fn dump_molecular_orbital(
     Ok(())
 }
 
-pub(crate) fn dump_all_molecular_orbitals(
+pub fn dump_all_molecular_orbitals(
     atoms: &[Atom],
     basis: &BasisSet,
     c: &Array2<f64>,

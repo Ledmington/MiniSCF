@@ -5,14 +5,14 @@ use std::{collections::HashMap, fs, time::Instant};
 use crate::basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell};
 
 #[derive(PartialEq, Debug)]
-pub(crate) struct ShellTemplate {
+pub struct ShellTemplate {
     angular: AngularMomentum,
     primitives: Vec<(f64, f64)>,
 }
 
 pub(crate) type BasisLibrary = HashMap<Element, Vec<ShellTemplate>>;
 
-pub(crate) fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
+pub fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
     let beginning = Instant::now();
     log::info!("Started reading basis set from file '{path}'");
 
@@ -134,7 +134,7 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
     library
 }
 
-pub(crate) fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
+pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
     let mut shells: Vec<(Shell, (u8, u8, u8))> = Vec::new();
 
     for atom in atoms {

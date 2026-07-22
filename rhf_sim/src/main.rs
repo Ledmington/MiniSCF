@@ -1,17 +1,12 @@
 #![forbid(unsafe_code)]
 
-mod basis;
-mod basis_reader;
-mod cube_writer;
-mod integrals;
-mod sim;
-
-use crate::{
+use clap::Parser;
+use scf_sim::{
     basis_reader::{build_basis, parse_nwchem_basis},
     cube_writer::dump_all_molecular_orbitals,
+    integrals,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
-use clap::Parser;
 use simple_logger::SimpleLogger;
 use std::time::Instant;
 use xyz::read_xyz;

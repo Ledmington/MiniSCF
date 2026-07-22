@@ -7,7 +7,7 @@ use scf_core::point::Point;
 use std::{f64::consts::PI, sync::Arc};
 
 #[derive(Debug, Clone, PartialEq)]
-pub(crate) struct PrimitiveGaussian {
+pub struct PrimitiveGaussian {
     /// Raw, does not include normalization
     contraction_coefficient: f64,
     alpha: f64,
@@ -57,8 +57,8 @@ fn double_factorial(mut n: i32) -> i32 {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct BasisSet {
-    pub(crate) functions: Vec<BasisFunction>,
+pub struct BasisSet {
+    pub functions: Vec<BasisFunction>,
 }
 
 impl BasisSet {
@@ -179,7 +179,7 @@ pub(crate) struct Shell {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct BasisFunction {
+pub struct BasisFunction {
     pub(crate) shell: Arc<Shell>,
     pub(crate) angular_momentum: (u8, u8, u8), // (lx, ly, lz)
 }

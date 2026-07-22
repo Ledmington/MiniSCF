@@ -4,7 +4,7 @@ use scf_core::{Atom, point::Point};
 
 use crate::basis::{BasisFunction, PrimitiveGaussian};
 
-pub(crate) fn overlap(a: &BasisFunction, b: &BasisFunction) -> f64 {
+pub fn overlap(a: &BasisFunction, b: &BasisFunction) -> f64 {
     contracted_pair(a, b, primitive_overlap)
 }
 
