@@ -387,7 +387,7 @@ pub fn run_rhf_simulation(
         log::debug!("N_e                            : {electron_count:.6}");
         assert!(
             approx_eq(electron_count, n_electrons as f64, 1e-8),
-            "Wrong electron count: expected {electron_count} but was {n_electrons}."
+            "Wrong electron count: expected {n_electrons} but was {electron_count}."
         );
 
         // RHF energy
