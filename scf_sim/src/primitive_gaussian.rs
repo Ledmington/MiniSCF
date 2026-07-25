@@ -15,11 +15,11 @@ pub(crate) struct PrimitiveGaussian {
 }
 
 impl PrimitiveGaussian {
+    /// Despite their names, `n`, `l` and `m` are NOT the orbital's quantum numbers.
     pub(crate) fn new(n: u8, l: u8, m: u8, alpha: f64, center: Point) -> Self {
-        // TODO: check these assertions
-        assert!(n < 7); // no element exists with orbitals with principal number higher than 7
-        assert!(l <= n);
-        assert!(m < 7);
+        // Since L=n+l+m determines the orbital type
+        // L=0 s, L=1 p, L=2 d, L=3 f
+        assert!(n + l + m < 4);
         assert!(alpha > 0.0);
         PrimitiveGaussian {
             n,
@@ -56,5 +56,5 @@ impl PrimitiveGaussian {
 fn normalization_coefficient(k: u8, alpha: f64) -> f64 {
     ((2.0 * alpha) / PI).powf(0.25)
         * (4.0 * alpha).powf((k as f64) / 2.0)
-        * (double_factorial((2 * k - 1) as i32) as f64).powf(-0.5)
+        * (double_factorial(2 * (k as i32) - 1) as f64).powf(-0.5)
 }

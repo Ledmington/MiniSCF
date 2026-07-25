@@ -203,7 +203,7 @@ mod tests {
         let expected_overlap = 1.0;
         assert!(
             (actual_overlap - expected_overlap).abs() < 1e-10,
-            "Expected overlap between {bf:?} and itself to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
+            "Expected overlap between {bf:#?} and itself to be {expected_overlap} but was {actual_overlap} (seed: {seed})."
         );
     }
 
