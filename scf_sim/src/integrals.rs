@@ -391,7 +391,11 @@ fn primitive_eri(
                     for nu in 0..cd.e_y.len() {
                         for phi in 0..cd.e_z.len() {
                             let e2 = cd.e_x[tau] * cd.e_y[nu] * cd.e_z[phi];
-                            sum += e1 * e2 * r.get(0, t + tau, u + nu, v + phi);
+                            // The ket Hermite coefficients pick up a (-1)^(tau+nu+phi) sign,
+                            // since R_tuv is defined via derivatives w.r.t. the bra center P
+                            // and the Coulomb kernel depends only on P - Q.
+                            let ket_sign = if (tau + nu + phi) % 2 == 0 { 1.0 } else { -1.0 };
+                            sum += e1 * e2 * ket_sign * r.get(0, t + tau, u + nu, v + phi);
                         }
                     }
                 }
