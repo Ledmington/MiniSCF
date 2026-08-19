@@ -3,7 +3,7 @@
 use clap::Parser;
 use scf_sim::{
     basis_reader::{build_basis, parse_nwchem_basis},
-    cube_writer::dump_all_molecular_orbitals,
+    cube_writer::{CubeFormat, dump},
     integrals,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
@@ -26,6 +26,15 @@ struct Args {
     /// Prefix of the file where to write molecular orbitals
     #[arg(short, long, default_value = "mo_")]
     output_prefix: String,
+
+    /// Cube file format(s) to write. Repeat the flag or comma-separate to request more than one.
+    #[arg(
+        short = 'f',
+        long = "format",
+        value_delimiter = ',',
+        default_value = "orbitals,density"
+    )]
+    formats: Vec<CubeFormat>,
 
     /// Maximum number of iterations for the SCF method
     #[arg(long, default_value_t = 100)]
@@ -105,7 +114,13 @@ fn main() -> std::io::Result<()> {
 
     let c = run_rhf_simulation(&input_file.atoms, &basis, &opt_params);
 
-    dump_all_molecular_orbitals(&input_file.atoms, &basis, &c, args.output_prefix)?;
+    dump(
+        &input_file.atoms,
+        &basis,
+        &c,
+        &args.formats,
+        args.output_prefix,
+    )?;
 
     log::info!("All done!");
 

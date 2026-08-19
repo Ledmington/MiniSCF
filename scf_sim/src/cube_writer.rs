@@ -6,6 +6,29 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::time::Instant;
 
+/// Which cube file format(s) `dump` should write.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CubeFormat {
+    /// One .cube file per molecular orbital.
+    Orbitals,
+    /// A single .cube file with the total electron density.
+    Density,
+}
+
+impl std::str::FromStr for CubeFormat {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_ascii_lowercase().as_str() {
+            "orbitals" => Ok(CubeFormat::Orbitals),
+            "density" => Ok(CubeFormat::Density),
+            other => Err(format!(
+                "unknown cube format '{other}' (expected 'orbitals' or 'density')"
+            )),
+        }
+    }
+}
+
 #[derive(Clone)]
 struct Grid {
     origin: Point,
@@ -120,6 +143,32 @@ fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: us
     values
 }
 
+fn evaluate_density(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, n_occ: usize) -> Vec<f64> {
+    let mut values = Vec::new();
+
+    for ix in 0..grid.nx {
+        for iy in 0..grid.ny {
+            for iz in 0..grid.nz {
+                let r = Point::new(
+                    grid.origin.x + (ix as f64) * grid.dx,
+                    grid.origin.y + (iy as f64) * grid.dy,
+                    grid.origin.z + (iz as f64) * grid.dz,
+                );
+
+                let rho: f64 = (0..n_occ)
+                    .map(|mo_index| {
+                        let psi = basis.evaluate_molecular_orbital(&r, c, mo_index);
+                        2.0 * psi * psi
+                    })
+                    .sum();
+                values.push(rho);
+            }
+        }
+    }
+
+    values
+}
+
 fn compute_grid(atoms: &[Atom]) -> Grid {
     let beginning = Instant::now();
 
@@ -200,27 +249,23 @@ fn dump_molecular_orbital(
     Ok(())
 }
 
-pub fn dump_all_molecular_orbitals(
-    atoms: &[Atom],
+fn dump_all_molecular_orbitals(
+    writer: &CubeWriter,
     basis: &BasisSet,
     c: &Array2<f64>,
-    output_filename_prefix: String,
+    grid: &Grid,
+    output_filename_prefix: &str,
 ) -> std::io::Result<()> {
-    // Pre-compute the grid
-    let grid = compute_grid(atoms);
-
-    let writer = CubeWriter::new(atoms.to_vec(), grid.clone());
-
     let beginning = Instant::now();
     log::info!("Starting writing {} orbitals", c.ncols());
 
     for mo_index in 0..c.ncols() {
         dump_molecular_orbital(
-            &writer,
+            writer,
             basis,
             c,
             mo_index,
-            &grid,
+            grid,
             format!("{output_filename_prefix}{mo_index}.cube"),
         )?;
     }
@@ -228,6 +273,62 @@ pub fn dump_all_molecular_orbitals(
     {
         let elapsed = Instant::now() - beginning;
         log::info!("Completed writing {} orbitals in {elapsed:?}", c.ncols());
+    }
+
+    Ok(())
+}
+
+/// Dumps the total electron density rho(r) = sum over occupied MOs of 2 * psi_i(r)^2
+/// into a single cube file, combining every occupied orbital into one field.
+fn dump_electron_density(
+    writer: &CubeWriter,
+    basis: &BasisSet,
+    c: &Array2<f64>,
+    grid: &Grid,
+    output_filename: &str,
+) -> std::io::Result<()> {
+    let n_electrons: usize = writer.atoms.iter().map(|a| a.charge as usize).sum();
+    let n_occ = basis.num_occupied_orbitals(n_electrons);
+
+    let beginning = Instant::now();
+    log::info!("Starting writing electron density to '{output_filename}'");
+
+    let values = evaluate_density(grid, basis, c, n_occ);
+    writer.write(output_filename, &values)?;
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed writing electron density in {elapsed:?}");
+    }
+
+    Ok(())
+}
+
+/// Writes the requested cube file format(s), computing the real-space grid once and
+/// reusing it across all of them.
+pub fn dump(
+    atoms: &[Atom],
+    basis: &BasisSet,
+    c: &Array2<f64>,
+    formats: &[CubeFormat],
+    output_filename_prefix: String,
+) -> std::io::Result<()> {
+    let grid = compute_grid(atoms);
+    let writer = CubeWriter::new(atoms.to_vec(), grid.clone());
+
+    for format in formats {
+        match format {
+            CubeFormat::Orbitals => {
+                dump_all_molecular_orbitals(&writer, basis, c, &grid, &output_filename_prefix)?
+            }
+            CubeFormat::Density => dump_electron_density(
+                &writer,
+                basis,
+                c,
+                &grid,
+                &format!("{output_filename_prefix}density.cube"),
+            )?,
+        }
     }
 
     Ok(())
