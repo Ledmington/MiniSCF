@@ -27,7 +27,8 @@ struct Args {
     #[arg(short, long, default_value = "mo_")]
     output_prefix: String,
 
-    /// Cube file format(s) to write. Repeat the flag or comma-separate to request more than one.
+    /// Cube file format(s) to write: orbitals, density, esp. Repeat the flag or
+    /// comma-separate to request more than one.
     #[arg(
         short = 'f',
         long = "format",

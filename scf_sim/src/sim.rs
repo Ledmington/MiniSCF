@@ -42,6 +42,15 @@ fn compute_density_matrix(n: usize, n_occ: usize, c: &Array2<f64>, p: &mut Array
     }
 }
 
+/// Builds the AO density matrix P from a converged MO coefficient matrix `c`, using its
+/// first `n_occ` (doubly-occupied) columns.
+pub fn density_matrix(c: &Array2<f64>, n_occ: usize) -> Array2<f64> {
+    let n = c.nrows();
+    let mut p = Array2::<f64>::zeros((n, n));
+    compute_density_matrix(n, n_occ, c, &mut p);
+    p
+}
+
 fn compute_two_electron_contribution(p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
     let n = p.dim().0;
     let mut g = Array2::<f64>::zeros((n, n));

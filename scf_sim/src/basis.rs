@@ -109,6 +109,30 @@ impl BasisSet {
         m
     }
 
+    /// The electronic contribution to the electrostatic potential at `point`, i.e.
+    /// sum_{mu,nu} P[mu,nu] * (mu nu | 1/|r - point|), given the AO density matrix.
+    pub(crate) fn electronic_potential(&self, point: &Point, density: &Array2<f64>) -> f64 {
+        let n = self.num_contracted_gaussians();
+        let mut sum = 0.0;
+
+        for i in 0..n {
+            sum += density[[i, i]]
+                * integrals::coulomb_potential(&self.functions[i], &self.functions[i], point);
+        }
+
+        for i in 0..n {
+            for j in (i + 1)..n {
+                let val =
+                    integrals::coulomb_potential(&self.functions[i], &self.functions[j], point);
+                // density and the integral are both symmetric in (i, j), so the off-diagonal
+                // terms contribute twice.
+                sum += 2.0 * density[[i, j]] * val;
+            }
+        }
+
+        sum
+    }
+
     fn one_electron_matrix(
         &self,
         f: impl Fn(&BasisFunction, &BasisFunction) -> f64,

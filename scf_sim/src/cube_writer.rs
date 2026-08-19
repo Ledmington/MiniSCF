@@ -1,4 +1,5 @@
 use crate::basis::BasisSet;
+use crate::sim::density_matrix;
 use ndarray::Array2;
 use scf_core::Atom;
 use scf_core::point::Point;
@@ -13,6 +14,8 @@ pub enum CubeFormat {
     Orbitals,
     /// A single .cube file with the total electron density.
     Density,
+    /// A single .cube file with the molecular electrostatic potential.
+    Esp,
 }
 
 impl std::str::FromStr for CubeFormat {
@@ -22,8 +25,9 @@ impl std::str::FromStr for CubeFormat {
         match s.to_ascii_lowercase().as_str() {
             "orbitals" => Ok(CubeFormat::Orbitals),
             "density" => Ok(CubeFormat::Density),
+            "esp" => Ok(CubeFormat::Esp),
             other => Err(format!(
-                "unknown cube format '{other}' (expected 'orbitals' or 'density')"
+                "unknown cube format '{other}' (expected 'orbitals', 'density' or 'esp')"
             )),
         }
     }
@@ -169,6 +173,46 @@ fn evaluate_density(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, n_occ: usize
     values
 }
 
+/// A grid point can land exactly on a nucleus (e.g. atoms placed at coordinates that are
+/// multiples of the grid spacing), where the 1/r nuclear term is formally infinite. Clamp
+/// the distance to keep the cube file finite; this is far below the grid spacing, so it
+/// only affects voxels that coincide with a nucleus.
+const MIN_NUCLEAR_DISTANCE: f64 = 1e-3;
+
+/// The molecular electrostatic potential at `r`: the potential a unit positive test charge
+/// would feel, i.e. the nuclear contribution sum_A Z_A/|r-R_A| minus the electronic
+/// contribution sum_{mu,nu} P[mu,nu] * (mu nu | 1/|r-r'|).
+fn evaluate_electrostatic_potential(
+    grid: &Grid,
+    basis: &BasisSet,
+    atoms: &[Atom],
+    density: &Array2<f64>,
+) -> Vec<f64> {
+    let mut values = Vec::new();
+
+    for ix in 0..grid.nx {
+        for iy in 0..grid.ny {
+            for iz in 0..grid.nz {
+                let r = Point::new(
+                    grid.origin.x + (ix as f64) * grid.dx,
+                    grid.origin.y + (iy as f64) * grid.dy,
+                    grid.origin.z + (iz as f64) * grid.dz,
+                );
+
+                let v_nuclear: f64 = atoms
+                    .iter()
+                    .map(|a| (a.charge as f64) / r.distance(&a.position).max(MIN_NUCLEAR_DISTANCE))
+                    .sum();
+                let v_electronic = basis.electronic_potential(&r, density);
+
+                values.push(v_nuclear - v_electronic);
+            }
+        }
+    }
+
+    values
+}
+
 fn compute_grid(atoms: &[Atom]) -> Grid {
     let beginning = Instant::now();
 
@@ -304,6 +348,32 @@ fn dump_electron_density(
     Ok(())
 }
 
+/// Dumps the molecular electrostatic potential into a single cube file.
+fn dump_electrostatic_potential(
+    writer: &CubeWriter,
+    basis: &BasisSet,
+    c: &Array2<f64>,
+    grid: &Grid,
+    output_filename: &str,
+) -> std::io::Result<()> {
+    let n_electrons: usize = writer.atoms.iter().map(|a| a.charge as usize).sum();
+    let n_occ = basis.num_occupied_orbitals(n_electrons);
+    let density = density_matrix(c, n_occ);
+
+    let beginning = Instant::now();
+    log::info!("Starting writing electrostatic potential to '{output_filename}'");
+
+    let values = evaluate_electrostatic_potential(grid, basis, &writer.atoms, &density);
+    writer.write(output_filename, &values)?;
+
+    {
+        let elapsed = Instant::now() - beginning;
+        log::info!("Completed writing electrostatic potential in {elapsed:?}");
+    }
+
+    Ok(())
+}
+
 /// Writes the requested cube file format(s), computing the real-space grid once and
 /// reusing it across all of them.
 pub fn dump(
@@ -327,6 +397,13 @@ pub fn dump(
                 c,
                 &grid,
                 &format!("{output_filename_prefix}density.cube"),
+            )?,
+            CubeFormat::Esp => dump_electrostatic_potential(
+                &writer,
+                basis,
+                c,
+                &grid,
+                &format!("{output_filename_prefix}esp.cube"),
             )?,
         }
     }
