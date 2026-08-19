@@ -528,10 +528,7 @@ mod tests {
 
                     assert!(
                         (r1.get(0, tx, ty, tz) - sign * r2.get(0, tx, ty, tz)).abs() < eps,
-                        "({}, {}, {}) failed",
-                        tx,
-                        ty,
-                        tz,
+                        "({tx}, {ty}, {tz}) failed"
                     );
                 }
             }
@@ -615,7 +612,7 @@ mod tests {
         let sd = electron_repulsion(&s, &s, &d, &d);
         let ds = electron_repulsion(&d, &d, &s, &s);
 
-        assert!((sd - ds).abs() < 1e-12, "(ss|dd) != (dd|ss): {} {}", sd, ds);
+        assert!((sd - ds).abs() < 1e-12, "(ss|dd) != (dd|ss): {sd} {ds}");
     }
 
     #[test]
