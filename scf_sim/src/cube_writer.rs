@@ -126,7 +126,9 @@ impl CubeWriter {
     }
 }
 
-fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: usize) -> Vec<f64> {
+/// Evaluates `f` at every point of `grid`, in the same x-slowest/z-fastest order the cube
+/// format expects.
+fn evaluate_grid(grid: &Grid, f: impl Fn(&Point) -> f64) -> Vec<f64> {
     let mut values = Vec::new();
 
     for ix in 0..grid.nx {
@@ -138,8 +140,7 @@ fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: us
                     grid.origin.z + (iz as f64) * grid.dz,
                 );
 
-                let psi = basis.evaluate_molecular_orbital(&r, c, mo_index);
-                values.push(psi);
+                values.push(f(&r));
             }
         }
     }
@@ -147,30 +148,19 @@ fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: us
     values
 }
 
+fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: usize) -> Vec<f64> {
+    evaluate_grid(grid, |r| basis.evaluate_molecular_orbital(r, c, mo_index))
+}
+
 fn evaluate_density(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, n_occ: usize) -> Vec<f64> {
-    let mut values = Vec::new();
-
-    for ix in 0..grid.nx {
-        for iy in 0..grid.ny {
-            for iz in 0..grid.nz {
-                let r = Point::new(
-                    grid.origin.x + (ix as f64) * grid.dx,
-                    grid.origin.y + (iy as f64) * grid.dy,
-                    grid.origin.z + (iz as f64) * grid.dz,
-                );
-
-                let rho: f64 = (0..n_occ)
-                    .map(|mo_index| {
-                        let psi = basis.evaluate_molecular_orbital(&r, c, mo_index);
-                        2.0 * psi * psi
-                    })
-                    .sum();
-                values.push(rho);
-            }
-        }
-    }
-
-    values
+    evaluate_grid(grid, |r| {
+        (0..n_occ)
+            .map(|mo_index| {
+                let psi = basis.evaluate_molecular_orbital(r, c, mo_index);
+                2.0 * psi * psi
+            })
+            .sum()
+    })
 }
 
 /// A grid point can land exactly on a nucleus (e.g. atoms placed at coordinates that are
@@ -188,29 +178,15 @@ fn evaluate_electrostatic_potential(
     atoms: &[Atom],
     density: &Array2<f64>,
 ) -> Vec<f64> {
-    let mut values = Vec::new();
+    evaluate_grid(grid, |r| {
+        let v_nuclear: f64 = atoms
+            .iter()
+            .map(|a| (a.charge as f64) / r.distance(&a.position).max(MIN_NUCLEAR_DISTANCE))
+            .sum();
+        let v_electronic = basis.electronic_potential(r, density);
 
-    for ix in 0..grid.nx {
-        for iy in 0..grid.ny {
-            for iz in 0..grid.nz {
-                let r = Point::new(
-                    grid.origin.x + (ix as f64) * grid.dx,
-                    grid.origin.y + (iy as f64) * grid.dy,
-                    grid.origin.z + (iz as f64) * grid.dz,
-                );
-
-                let v_nuclear: f64 = atoms
-                    .iter()
-                    .map(|a| (a.charge as f64) / r.distance(&a.position).max(MIN_NUCLEAR_DISTANCE))
-                    .sum();
-                let v_electronic = basis.electronic_potential(&r, density);
-
-                values.push(v_nuclear - v_electronic);
-            }
-        }
-    }
-
-    values
+        v_nuclear - v_electronic
+    })
 }
 
 fn compute_grid(atoms: &[Atom]) -> Grid {
@@ -271,6 +247,22 @@ fn compute_grid(atoms: &[Atom]) -> Grid {
     }
 }
 
+/// Runs `f`, logging a start message and an elapsed-time completion message around it.
+/// The completion message is skipped if `f` fails, matching an early return from `?`.
+fn timed<T>(
+    label: impl std::fmt::Display,
+    f: impl FnOnce() -> std::io::Result<T>,
+) -> std::io::Result<T> {
+    log::info!("Starting {label}");
+    let beginning = Instant::now();
+
+    let result = f()?;
+
+    let elapsed = Instant::now() - beginning;
+    log::info!("Completed {label} in {elapsed:?}");
+    Ok(result)
+}
+
 fn dump_molecular_orbital(
     writer: &CubeWriter,
     basis: &BasisSet,
@@ -279,18 +271,13 @@ fn dump_molecular_orbital(
     grid: &Grid,
     filename: String,
 ) -> std::io::Result<()> {
-    let beginning = Instant::now();
-    log::info!("Starting writing orbital {mo_index} to '{filename}'");
-
-    let values = evaluate_orbital(grid, basis, c, mo_index);
-    writer.write(&filename, &values)?;
-
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Completed writing orbital {mo_index} in {elapsed:?}");
-    }
-
-    Ok(())
+    timed(
+        format!("writing orbital {mo_index} to '{filename}'"),
+        || {
+            let values = evaluate_orbital(grid, basis, c, mo_index);
+            writer.write(&filename, &values)
+        },
+    )
 }
 
 fn dump_all_molecular_orbitals(
@@ -300,26 +287,19 @@ fn dump_all_molecular_orbitals(
     grid: &Grid,
     output_filename_prefix: &str,
 ) -> std::io::Result<()> {
-    let beginning = Instant::now();
-    log::info!("Starting writing {} orbitals", c.ncols());
-
-    for mo_index in 0..c.ncols() {
-        dump_molecular_orbital(
-            writer,
-            basis,
-            c,
-            mo_index,
-            grid,
-            format!("{output_filename_prefix}{mo_index}.cube"),
-        )?;
-    }
-
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Completed writing {} orbitals in {elapsed:?}", c.ncols());
-    }
-
-    Ok(())
+    timed(format!("writing {} orbitals", c.ncols()), || {
+        for mo_index in 0..c.ncols() {
+            dump_molecular_orbital(
+                writer,
+                basis,
+                c,
+                mo_index,
+                grid,
+                format!("{output_filename_prefix}{mo_index}.cube"),
+            )?;
+        }
+        Ok(())
+    })
 }
 
 /// Dumps the total electron density rho(r) = sum over occupied MOs of 2 * psi_i(r)^2
@@ -334,18 +314,13 @@ fn dump_electron_density(
     let n_electrons: usize = writer.atoms.iter().map(|a| a.charge as usize).sum();
     let n_occ = basis.num_occupied_orbitals(n_electrons);
 
-    let beginning = Instant::now();
-    log::info!("Starting writing electron density to '{output_filename}'");
-
-    let values = evaluate_density(grid, basis, c, n_occ);
-    writer.write(output_filename, &values)?;
-
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Completed writing electron density in {elapsed:?}");
-    }
-
-    Ok(())
+    timed(
+        format!("writing electron density to '{output_filename}'"),
+        || {
+            let values = evaluate_density(grid, basis, c, n_occ);
+            writer.write(output_filename, &values)
+        },
+    )
 }
 
 /// Dumps the molecular electrostatic potential into a single cube file.
@@ -360,18 +335,13 @@ fn dump_electrostatic_potential(
     let n_occ = basis.num_occupied_orbitals(n_electrons);
     let density = density_matrix(c, n_occ);
 
-    let beginning = Instant::now();
-    log::info!("Starting writing electrostatic potential to '{output_filename}'");
-
-    let values = evaluate_electrostatic_potential(grid, basis, &writer.atoms, &density);
-    writer.write(output_filename, &values)?;
-
-    {
-        let elapsed = Instant::now() - beginning;
-        log::info!("Completed writing electrostatic potential in {elapsed:?}");
-    }
-
-    Ok(())
+    timed(
+        format!("writing electrostatic potential to '{output_filename}'"),
+        || {
+            let values = evaluate_electrostatic_potential(grid, basis, &writer.atoms, &density);
+            writer.write(output_filename, &values)
+        },
+    )
 }
 
 /// Writes the requested cube file format(s), computing the real-space grid once and
