@@ -2,3 +2,5 @@
 *.pdf
 *.cube
 *.gbs
+.venv/
+__pycache__/
