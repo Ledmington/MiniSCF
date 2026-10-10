@@ -295,7 +295,7 @@ fn dump_all_molecular_orbitals(
                 c,
                 mo_index,
                 grid,
-                format!("{output_filename_prefix}{mo_index}.cube"),
+                orbital_filename(output_filename_prefix, mo_index),
             )?;
         }
         Ok(())
@@ -344,6 +344,34 @@ fn dump_electrostatic_potential(
     )
 }
 
+fn orbital_filename(prefix: &str, mo_index: usize) -> String {
+    format!("{prefix}{mo_index}.cube")
+}
+
+fn density_filename(prefix: &str) -> String {
+    format!("{prefix}density.cube")
+}
+
+fn esp_filename(prefix: &str) -> String {
+    format!("{prefix}esp.cube")
+}
+
+/// Names of all the files `dump` would write for the given format(s) and number of
+/// molecular orbitals, so that callers can check for them before running a simulation.
+pub fn output_filenames(formats: &[CubeFormat], prefix: &str, num_orbitals: usize) -> Vec<String> {
+    let mut filenames = Vec::new();
+    for format in formats {
+        match format {
+            CubeFormat::Orbitals => {
+                filenames.extend((0..num_orbitals).map(|i| orbital_filename(prefix, i)))
+            }
+            CubeFormat::Density => filenames.push(density_filename(prefix)),
+            CubeFormat::Esp => filenames.push(esp_filename(prefix)),
+        }
+    }
+    filenames
+}
+
 /// Writes the requested cube file format(s), computing the real-space grid once and
 /// reusing it across all of them.
 pub fn dump(
@@ -366,17 +394,39 @@ pub fn dump(
                 basis,
                 c,
                 &grid,
-                &format!("{output_filename_prefix}density.cube"),
+                &density_filename(&output_filename_prefix),
             )?,
             CubeFormat::Esp => dump_electrostatic_potential(
                 &writer,
                 basis,
                 c,
                 &grid,
-                &format!("{output_filename_prefix}esp.cube"),
+                &esp_filename(&output_filename_prefix),
             )?,
         }
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn output_filenames_match_formats() {
+        assert_eq!(
+            vec!["mo_0.cube", "mo_1.cube", "mo_density.cube", "mo_esp.cube"],
+            output_filenames(
+                &[CubeFormat::Orbitals, CubeFormat::Density, CubeFormat::Esp],
+                "mo_",
+                2
+            )
+        );
+        assert_eq!(
+            vec!["out/esp.cube"],
+            output_filenames(&[CubeFormat::Esp], "out/", 7)
+        );
+        assert!(output_filenames(&[], "mo_", 3).is_empty());
+    }
 }
