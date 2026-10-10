@@ -433,16 +433,15 @@ pub fn run_rhf_simulation(
         log::info!("Optimization completed in {elapsed:?}.");
     }
 
-    let reason;
-    if iter >= opt_params.max_iterations {
-        reason = "max iterations reached";
+    let reason = if iter >= opt_params.max_iterations {
+        "max iterations reached"
     } else if delta_e < opt_params.e_tol && delta_p < opt_params.p_tol {
-        reason = "energy/density tolerance";
+        "energy/density tolerance"
     } else if residual_norm < opt_params.min_residual {
-        reason = "min residual reached";
+        "min residual reached"
     } else {
-        reason = "UNKNOWN";
-    }
+        "UNKNOWN"
+    };
     log::info!("Optimization stopped because: {reason}.");
 
     log::info!("Resulting orbitals:");
