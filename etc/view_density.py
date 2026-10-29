@@ -116,7 +116,7 @@ def warn_if_open(polydata, isovalue):
         )
 
 
-def esp_surface_actor(density_image, esp_image, isovalue, lut, vmin, vmax):
+def esp_surface_actor(density_image, esp_image, isovalue, lut, vmin, vmax, opacity):
     mc = vtk.vtkMarchingCubes()
     mc.SetInputData(density_image)
     mc.ComputeNormalsOn()
@@ -149,6 +149,7 @@ def esp_surface_actor(density_image, esp_image, isovalue, lut, vmin, vmax):
     prop.SetDiffuse(0.85)
     prop.SetSpecular(0.4)
     prop.SetSpecularPower(30)
+    prop.SetOpacity(opacity)
     return actor, probe
 
 
@@ -224,7 +225,7 @@ def main():
     parser.add_argument(
         "--show-atoms",
         action="store_true",
-        help="also draw atom spheres (mostly hidden under the surface)",
+        help="also draw atom spheres (hidden under the surface unless --surface-opacity < 1)",
     )
     parser.add_argument(
         "--atom-scale",
@@ -232,7 +233,16 @@ def main():
         default=0.25,
         help="atom sphere radius as a fraction of covalent radius (default: 0.25)",
     )
+    parser.add_argument(
+        "--surface-opacity",
+        type=float,
+        default=1.0,
+        help="opacity of the density surface, from 0 (invisible) to 1 (opaque); "
+        "lower it together with --show-atoms to see the atoms inside (default: 1.0)",
+    )
     args = parser.parse_args()
+    if not 0.0 <= args.surface_opacity <= 1.0:
+        parser.error("--surface-opacity must be between 0 and 1")
 
     density_cube = read_cube(args.density_cube)
     esp_cube = read_cube(args.esp_cube)
@@ -242,7 +252,13 @@ def main():
 
     lut_placeholder = build_diverging_lut(-1.0, 1.0)
     actor, probe = esp_surface_actor(
-        density_image, esp_image, args.isovalue, lut_placeholder, -1.0, 1.0
+        density_image,
+        esp_image,
+        args.isovalue,
+        lut_placeholder,
+        -1.0,
+        1.0,
+        args.surface_opacity,
     )
     probe.Update()
 
@@ -276,6 +292,16 @@ def main():
     window.SetSize(1200, 900)
     window.SetWindowName(f"MiniSCF - {args.esp_cube} on {args.density_cube}")
     window.AddRenderer(renderer)
+
+    if args.surface_opacity < 1.0:
+        # A translucent surface overlaps itself (front and back faces, plus the atoms
+        # behind it), and plain alpha blending only looks right if those fragments are
+        # drawn back-to-front. Depth peeling sorts them per pixel instead.
+        window.SetAlphaBitPlanes(1)
+        window.SetMultiSamples(0)
+        renderer.SetUseDepthPeeling(1)
+        renderer.SetMaximumNumberOfPeels(100)
+        renderer.SetOcclusionRatio(0.0)
 
     interactor = vtk.vtkRenderWindowInteractor()
     interactor.SetRenderWindow(window)
