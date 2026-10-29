@@ -164,7 +164,7 @@ impl BasisSet {
                 // Iterate over all unique pairs (k, l)
                 for k in 0..n {
                     for l in 0..=k {
-                        // Discard symemtric quadruplets
+                        // Discard symmetric quadruplets
                         if (i * (i + 1)) / 2 + j < (k * (k + 1)) / 2 + l {
                             continue;
                         }
