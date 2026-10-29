@@ -35,9 +35,7 @@ fn atomic_number(symbol_or_number: &str) -> Result<u8> {
     Ok(number)
 }
 
-fn main() -> Result<()> {
-    let args = Args::parse();
-
+fn run(args: &Args) -> Result<()> {
     let basis = normalize_basis(&args.basis);
 
     let elements: Vec<String> = args
@@ -57,7 +55,10 @@ fn main() -> Result<()> {
     let response = reqwest::blocking::get(&url)?;
 
     if !response.status().is_success() {
-        return Err(anyhow!("Request failed with status {}", response.status()));
+        return Err(anyhow!(
+            "Request failed with status '{}', is the basis set name correct?",
+            response.status()
+        ));
     }
 
     let body = response.text()?;
@@ -68,4 +69,13 @@ fn main() -> Result<()> {
     println!("Written basis set to {}", args.output);
 
     Ok(())
+}
+
+fn main() {
+    let args = Args::parse();
+
+    if let Err(e) = run(&args) {
+        eprintln!("Error: {e:#}");
+        std::process::exit(1);
+    }
 }
