@@ -281,6 +281,9 @@ pub fn run_rhf_simulation(
     let setup = setup_rhf_simulation(atoms, basis);
 
     let eri = basis.electron_repulsion_tensor();
+
+    // This is just a double check
+    // TODO: add an options to disable double checks
     check_electron_repulsion_integrals(&eri, 1e-6);
 
     // initial guess density

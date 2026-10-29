@@ -158,16 +158,32 @@ impl BasisSet {
         let n = self.num_contracted_gaussians();
         let mut eri = Array4::zeros((n, n, n, n));
 
-        for a in 0..n {
-            for b in 0..n {
-                for c in 0..n {
-                    for d in 0..n {
-                        eri[[a, b, c, d]] = integrals::electron_repulsion(
-                            &self.functions[a],
-                            &self.functions[b],
-                            &self.functions[c],
-                            &self.functions[d],
+        // Iterate over all unique pairs (i, j)
+        for i in 0..n {
+            for j in 0..=i {
+                // Iterate over all unique pairs (k, l)
+                for k in 0..n {
+                    for l in 0..=k {
+                        // Discard symemtric quadruplets
+                        if (i * (i + 1)) / 2 + j < (k * (k + 1)) / 2 + l {
+                            continue;
+                        }
+
+                        let val = integrals::electron_repulsion(
+                            &self.functions[i],
+                            &self.functions[j],
+                            &self.functions[k],
+                            &self.functions[l],
                         );
+
+                        eri[[i, j, k, l]] = val;
+                        eri[[i, j, l, k]] = val;
+                        eri[[j, i, k, l]] = val;
+                        eri[[j, i, l, k]] = val;
+                        eri[[k, l, i, j]] = val;
+                        eri[[k, l, j, i]] = val;
+                        eri[[l, k, i, j]] = val;
+                        eri[[l, k, j, i]] = val;
                     }
                 }
             }
