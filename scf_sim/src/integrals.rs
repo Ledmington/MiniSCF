@@ -807,6 +807,12 @@ fn boys_all(n_max: usize, t: f64, out: &mut [f64]) {
 /// Spacing of the tabulated arguments of `BoysTable`.
 const BOYS_TABLE_STEP: f64 = 0.1;
 
+/// The index of the tabulated argument nearest to `t >= 0`. Adding 0.5 and truncating is
+/// a plain conversion, unlike `f64::round`, which is a library call on baseline x86-64.
+fn nearest_table_index(t: f64) -> usize {
+    (t * (1.0 / BOYS_TABLE_STEP) + 0.5) as usize
+}
+
 /// Number of Taylor terms used by `BoysTable`.
 const BOYS_TABLE_TERMS: usize = 8;
 
@@ -853,7 +859,7 @@ impl BoysTable {
         if t >= BOYS_ASYMPTOTIC_THRESHOLD {
             return 0.5 * (PI / t).sqrt();
         }
-        let i = (t / BOYS_TABLE_STEP).round() as usize;
+        let i = nearest_table_index(t);
         let minus_d = i as f64 * BOYS_TABLE_STEP - t;
         let row_len = (self.n_max + 1) * BOYS_TABLE_TERMS;
         self.coefficients[i * row_len..][..BOYS_TABLE_TERMS]
@@ -870,7 +876,7 @@ impl BoysTable {
             boys_all(n_max, t, out);
             return;
         }
-        let i = (t / BOYS_TABLE_STEP).round() as usize;
+        let i = nearest_table_index(t);
         let minus_d = i as f64 * BOYS_TABLE_STEP - t;
         let row_len = (self.n_max + 1) * BOYS_TABLE_TERMS;
         let row = &self.coefficients[i * row_len..][..(n_max + 1) * BOYS_TABLE_TERMS];

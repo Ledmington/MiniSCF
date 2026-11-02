@@ -131,23 +131,26 @@ fn format_value(v: f64, out: &mut Vec<u8>) {
     let magnitude = v.abs();
     // Only normal numbers well inside the f64 range take the fast path.
     if (1e-300..1e300).contains(&magnitude) {
-        let mut exponent = magnitude.log10().floor() as i32;
+        // A first guess (truncation instead of `floor`, which is a library call), corrected
+        // until the mantissa has six digits before the decimal point.
+        let mut exponent = magnitude.log10() as i32;
         let mut scaled = magnitude * 10f64.powi(5 - exponent);
-        // log10 can be off by one next to powers of ten.
-        if scaled >= 1_000_000.0 {
+        while scaled >= 1_000_000.0 {
             exponent += 1;
             scaled = magnitude * 10f64.powi(5 - exponent);
-        } else if scaled < 100_000.0 {
+        }
+        while scaled < 100_000.0 {
             exponent -= 1;
             scaled = magnitude * 10f64.powi(5 - exponent);
         }
-        let rounded = scaled.round();
+        // Truncating conversions, unlike `f64::round`/`floor`, are not library calls.
+        let whole = scaled as u32;
+        let fraction = scaled - f64::from(whole);
+        let rounded = whole + u32::from(fraction > 0.5);
         // `scaled` is within a few ulps (~1e-10) of the exact value, so unless it is this
         // close to a rounding tie, it rounds the same way as the exact decimal expansion.
-        if (scaled - scaled.floor() - 0.5).abs() > 1e-6
-            && (100_000.0..1_000_000.0).contains(&rounded)
-        {
-            let mut digits = rounded as u32;
+        if (fraction - 0.5).abs() > 1e-6 && (100_000..1_000_000).contains(&rounded) {
+            let mut digits = rounded;
             let mut text = [0u8; 16];
             let mut len = 0;
             if v < 0.0 {
@@ -168,9 +171,17 @@ fn format_value(v: f64, out: &mut Vec<u8>) {
                 text[len] = b'-';
                 len += 1;
             }
-            let exponent_text = exponent.unsigned_abs().to_string();
-            text[len..len + exponent_text.len()].copy_from_slice(exponent_text.as_bytes());
-            len += exponent_text.len();
+            let exponent_digits = exponent.unsigned_abs();
+            if exponent_digits >= 100 {
+                text[len] = b'0' + (exponent_digits / 100) as u8;
+                len += 1;
+            }
+            if exponent_digits >= 10 {
+                text[len] = b'0' + (exponent_digits / 10 % 10) as u8;
+                len += 1;
+            }
+            text[len] = b'0' + (exponent_digits % 10) as u8;
+            len += 1;
             out.extend(std::iter::repeat_n(b' ', 13usize.saturating_sub(len)));
             out.extend_from_slice(&text[..len]);
             return;
