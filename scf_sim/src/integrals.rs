@@ -915,7 +915,7 @@ impl CoulombPotentialEvaluator {
             });
             if r2
                 .iter()
-                .all(|r2| exponent * r2 >= BOYS_ASYMPTOTIC_THRESHOLD)
+                .all(|distance2| exponent * distance2 >= BOYS_ASYMPTOTIC_THRESHOLD)
             {
                 // Far from the whole batch, F_0(t) = sqrt(pi / t) / 2 exactly: the
                 // distribution is a point charge.
