@@ -34,6 +34,7 @@ pub(crate) fn coulomb_potential(a: &BasisFunction, b: &BasisFunction, point: &Po
     -contracted_pair_with_nucleus(a, b, point, primitive_nuclear_attraction)
 }
 
+#[cfg(test)]
 pub(crate) fn electron_repulsion(
     a: &BasisFunction,
     b: &BasisFunction,
@@ -177,6 +178,7 @@ impl RCoulomb {
     }
 }
 
+#[cfg(test)]
 struct HermitePair {
     e_x: Vec<f64>,
     e_y: Vec<f64>,
@@ -184,6 +186,7 @@ struct HermitePair {
     prefactor: f64,
 }
 
+#[cfg(test)]
 fn hermite_pair(
     a: &PrimitiveGaussian,
     b: &PrimitiveGaussian,
@@ -357,6 +360,7 @@ pub(crate) fn primitive_nuclear_attraction(
     prefactor * sum
 }
 
+#[cfg(test)]
 fn primitive_eri(
     a: (&PrimitiveGaussian, &(u8, u8, u8)),
     b: (&PrimitiveGaussian, &(u8, u8, u8)),
@@ -444,6 +448,260 @@ fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> Poin
         (a.alpha() * a.center().y + b.alpha() * b.center().y) / p,
         (a.alpha() * a.center().z + b.alpha() * b.center().z) / p,
     )
+}
+
+// ------ electron repulsion tensor --------------------------------------
+
+/// One primitive pair of a `ShellPair`.
+struct PrimitivePair {
+    exponent: f64,
+    center: Point,
+    /// For each function pair of the shell pair, its Hermite expansion coefficients
+    /// (normalization, contraction coefficients and `exp(-mu |A - B|^2)` included) in a
+    /// dense cube of side `l + 1`, indexed by `(t * dim + u) * dim + v`.
+    expansions: Vec<f64>,
+}
+
+/// The products of the functions of two shells (`a` and `b`, ranges of function indices).
+struct ShellPair {
+    a: std::ops::Range<usize>,
+    b: std::ops::Range<usize>,
+    /// Total angular momentum `la + lb`.
+    l: usize,
+    primitives: Vec<PrimitivePair>,
+}
+
+impl ShellPair {
+    fn new(
+        functions: &[BasisFunction],
+        a: std::ops::Range<usize>,
+        b: std::ops::Range<usize>,
+    ) -> Self {
+        let total_l = |i: usize| {
+            let (x, y, z) = functions[i].angular_momentum;
+            (x + y + z) as usize
+        };
+        let l = total_l(a.start) + total_l(b.start);
+        let dim = l + 1;
+        let shell_a = &functions[a.start].shell;
+        let shell_b = &functions[b.start].shell;
+        let mut primitives = Vec::new();
+        for prim_a in &shell_a.primitives {
+            for prim_b in &shell_b.primitives {
+                let (p, mu, r2) = gaussian_pair_params(prim_a, prim_b);
+                let overlap_prefactor = (-mu * r2).exp();
+                if overlap_prefactor < PAIR_SCREENING_THRESHOLD {
+                    continue;
+                }
+                let center = weighted_center(prim_a, prim_b, p);
+                let pa = center.sub(&prim_a.center()).coordinates();
+                let pb = center.sub(&prim_b.center()).coordinates();
+                let mut expansions = vec![0.0; a.len() * b.len() * dim * dim * dim];
+                for (pair, (i, j)) in a
+                    .clone()
+                    .flat_map(|i| b.clone().map(move |j| (i, j)))
+                    .enumerate()
+                {
+                    let (fa, fb) = (&functions[i], &functions[j]);
+                    let weight = overlap_prefactor
+                        * fa.normalized_coefficient(prim_a)
+                        * fb.normalized_coefficient(prim_b);
+                    let (la, lb) = (fa.angular_momentum, fb.angular_momentum);
+                    let e_x = hermite_coefficients(la.0, lb.0, pa[0], pb[0], p);
+                    let e_y = hermite_coefficients(la.1, lb.1, pa[1], pb[1], p);
+                    let e_z = hermite_coefficients(la.2, lb.2, pa[2], pb[2], p);
+                    let cube = &mut expansions[pair * dim * dim * dim..];
+                    for (t, ex) in e_x.iter().enumerate() {
+                        for (u, ey) in e_y.iter().enumerate() {
+                            for (v, ez) in e_z.iter().enumerate() {
+                                cube[(t * dim + u) * dim + v] = weight * ex * ey * ez;
+                            }
+                        }
+                    }
+                }
+                primitives.push(PrimitivePair {
+                    exponent: p,
+                    center,
+                    expansions,
+                });
+            }
+        }
+        Self {
+            a,
+            b,
+            l,
+            primitives,
+        }
+    }
+
+    fn num_function_pairs(&self) -> usize {
+        self.a.len() * self.b.len()
+    }
+
+    fn function_pairs(&self) -> impl Iterator<Item = (usize, usize)> + '_ {
+        self.a
+            .clone()
+            .flat_map(|i| self.b.clone().map(move |j| (i, j)))
+    }
+}
+
+/// The electron repulsion integrals `(ij|kl)` of all the basis functions, computed shell
+/// quartet by shell quartet with the McMurchie-Davidson scheme: the Hermite expansions of
+/// every primitive pair are computed once, and each primitive quartet needs a single
+/// evaluation of the Boys functions and of the Hermite Coulomb integrals.
+pub(crate) fn electron_repulsion_tensor(functions: &[BasisFunction]) -> ndarray::Array4<f64> {
+    let n = functions.len();
+    let groups = crate::basis::shell_groups(functions);
+    let mut pairs = Vec::new();
+    for (ga, a) in groups.iter().enumerate() {
+        for b in &groups[..=ga] {
+            pairs.push(ShellPair::new(functions, a.clone(), b.clone()));
+        }
+    }
+    let max_l = pairs.iter().map(|p| p.l).max().unwrap_or(0);
+    let boys_table = BoysTable::new(2 * max_l);
+    let mut boys = vec![0.0; 2 * max_l + 1];
+    let mut r = vec![0.0; (2 * max_l + 1).pow(4)];
+    let mut ket_contracted = Vec::new();
+    let mut values = Vec::new();
+
+    let mut eri = ndarray::Array4::zeros((n, n, n, n));
+    for (index, bra) in pairs.iter().enumerate() {
+        for ket in &pairs[..=index] {
+            let l = bra.l + ket.l;
+            let dim = l + 1;
+            let (bra_dim, ket_dim) = (bra.l + 1, ket.l + 1);
+            let (bra_cube, ket_cube) = (bra_dim.pow(3), ket_dim.pow(3));
+            values.clear();
+            values.resize(bra.num_function_pairs() * ket.num_function_pairs(), 0.0);
+            ket_contracted.resize(ket.num_function_pairs() * bra_cube, 0.0);
+
+            for pb in &bra.primitives {
+                for pk in &ket.primitives {
+                    let (p, q) = (pb.exponent, pk.exponent);
+                    let rho = p * q / (p + q);
+                    let pq = pb.center.sub(&pk.center);
+                    let pq = [pq.x, pq.y, pq.z];
+                    hermite_coulomb_scalar(l, rho, pq, &boys_table, &mut boys, &mut r);
+                    let prefactor = 2.0 * PI.powf(2.5) / (p * q * (p + q).sqrt());
+
+                    // X_kl(t,u,v) = sum_(tau,nu,phi) (-1)^(tau+nu+phi) E_kl(tau,nu,phi)
+                    //               * R(t+tau, u+nu, v+phi)
+                    // (the ket picks up the sign since R is a derivative w.r.t. P).
+                    for (kl, x) in ket_contracted.chunks_exact_mut(bra_cube).enumerate() {
+                        let e_kl = &pk.expansions[kl * ket_cube..][..ket_cube];
+                        x.fill(0.0);
+                        for tau in 0..=ket.l {
+                            for nu in 0..=(ket.l - tau) {
+                                for phi in 0..=(ket.l - tau - nu) {
+                                    let e = e_kl[(tau * ket_dim + nu) * ket_dim + phi];
+                                    if e == 0.0 {
+                                        continue;
+                                    }
+                                    let signed = if (tau + nu + phi) % 2 == 0 { e } else { -e };
+                                    for t in 0..=bra.l {
+                                        for u in 0..=(bra.l - t) {
+                                            let row = &r[((t + tau) * dim + u + nu) * dim + phi..];
+                                            let out = &mut x[(t * bra_dim + u) * bra_dim..];
+                                            for v in 0..=(bra.l - t - u) {
+                                                out[v] += signed * row[v];
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+
+                    for (ij, e_ij) in pb.expansions.chunks_exact(bra_cube).enumerate() {
+                        let row = &mut values[ij * ket.num_function_pairs()..];
+                        for (kl, x) in ket_contracted.chunks_exact(bra_cube).enumerate() {
+                            let dot: f64 = e_ij.iter().zip(x).map(|(e, x)| e * x).sum();
+                            row[kl] += prefactor * dot;
+                        }
+                    }
+                }
+            }
+
+            let mut value = values.iter();
+            for (i, j) in bra.function_pairs() {
+                for (k, l) in ket.function_pairs() {
+                    let v = *value.next().expect("one value per function quartet");
+                    for [w, x, y, z] in [
+                        [i, j, k, l],
+                        [j, i, k, l],
+                        [i, j, l, k],
+                        [j, i, l, k],
+                        [k, l, i, j],
+                        [l, k, i, j],
+                        [k, l, j, i],
+                        [l, k, j, i],
+                    ] {
+                        eri[[w, x, y, z]] = v;
+                    }
+                }
+            }
+        }
+    }
+    eri
+}
+
+/// Fills `r` with the Hermite Coulomb integrals `R^n_tuv(alpha, pc)` for every
+/// `n + t + u + v <= l` at a single point, stored like in `hermite_coulomb_impl`.
+fn hermite_coulomb_scalar(
+    l: usize,
+    alpha: f64,
+    pc: [f64; 3],
+    boys_table: &BoysTable,
+    boys: &mut [f64],
+    r: &mut [f64],
+) {
+    let t = alpha * (pc[0] * pc[0] + pc[1] * pc[1] + pc[2] * pc[2]);
+    boys_table.fill(l, t, boys);
+    let dim = l + 1;
+    let block = dim * dim * dim;
+    let mut factor = 1.0;
+    for (n, f) in boys.iter().enumerate().take(l + 1) {
+        r[n * block] = factor * f;
+        factor *= -2.0 * alpha;
+    }
+    for n in (0..l).rev() {
+        let (lower, upper) = r.split_at_mut((n + 1) * block);
+        let here = &mut lower[n * block..];
+        let max = l - n;
+        for tx in 0..=max {
+            for ty in 0..=(max - tx) {
+                for tz in 0..=(max - tx - ty) {
+                    here[(tx * dim + ty) * dim + tz] = if tx > 0 {
+                        let index = ((tx - 1) * dim + ty) * dim + tz;
+                        let second = if tx > 1 {
+                            (tx - 1) as f64 * upper[index - dim * dim]
+                        } else {
+                            0.0
+                        };
+                        pc[0] * upper[index] + second
+                    } else if ty > 0 {
+                        let index = (ty - 1) * dim + tz;
+                        let second = if ty > 1 {
+                            (ty - 1) as f64 * upper[index - dim]
+                        } else {
+                            0.0
+                        };
+                        pc[1] * upper[index] + second
+                    } else if tz > 0 {
+                        let second = if tz > 1 {
+                            (tz - 1) as f64 * upper[tz - 2]
+                        } else {
+                            0.0
+                        };
+                        pc[2] * upper[tz - 1] + second
+                    } else {
+                        continue;
+                    };
+                }
+            }
+        }
+    }
 }
 
 // ------ electrostatic potential of a density ----------------------------
@@ -929,7 +1187,7 @@ mod tests {
     use rand::{RngExt, SeedableRng, rngs::ChaCha8Rng};
     use rstest::rstest;
 
-    use crate::basis::Shell;
+    use crate::basis::{AngularMomentum, Shell};
 
     use super::*;
 
@@ -958,6 +1216,58 @@ mod tests {
             ((actual - expected) / expected).abs() < 1e-11,
             "F_{n}({t}): expected {expected} but was {actual}."
         );
+    }
+
+    #[test]
+    fn test_electron_repulsion_tensor_matches_single_integrals() {
+        let mut rng = ChaCha8Rng::seed_from_u64(11);
+        let mut functions = Vec::new();
+        for (angular, center) in [
+            (AngularMomentum::S, Point::new(0.0, 0.0, 0.0)),
+            (AngularMomentum::P, Point::new(0.0, 0.0, 0.0)),
+            (AngularMomentum::D, Point::new(1.1, -0.4, 0.3)),
+            (AngularMomentum::F, Point::new(-0.5, 0.9, -1.2)),
+            (AngularMomentum::S, Point::new(-0.5, 0.9, -1.2)),
+        ] {
+            let shell = Arc::new(Shell {
+                center,
+                primitives: vec![
+                    PrimitiveGaussian::new(0.4, rng.random_range(2.0..6.0), center),
+                    PrimitiveGaussian::new(0.7, rng.random_range(0.1..1.5), center),
+                ],
+            });
+            for angular_momentum in angular.cartesian_components() {
+                functions.push(BasisFunction {
+                    shell: Arc::clone(&shell),
+                    angular_momentum,
+                });
+            }
+        }
+        let n = functions.len();
+        let eri = electron_repulsion_tensor(&functions);
+        for i in 0..n {
+            for j in 0..n {
+                for k in 0..n {
+                    for l in 0..n {
+                        // A sample of the quadruplets: the reference is slow.
+                        if (i + 3 * j + 7 * k + 13 * l) % 29 != 0 {
+                            continue;
+                        }
+                        let expected = electron_repulsion(
+                            &functions[i],
+                            &functions[j],
+                            &functions[k],
+                            &functions[l],
+                        );
+                        let actual = eri[[i, j, k, l]];
+                        assert!(
+                            (actual - expected).abs() <= 1e-12 * expected.abs().max(1.0),
+                            "({i}{j}|{k}{l}): expected {expected} but was {actual}."
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[rstest]
