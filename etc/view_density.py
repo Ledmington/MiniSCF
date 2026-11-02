@@ -224,8 +224,10 @@ def main():
     )
     parser.add_argument(
         "--show-atoms",
-        action="store_true",
-        help="also draw atom spheres (hidden under the surface unless --surface-opacity < 1)",
+        action=argparse.BooleanOptionalAction,
+        default=True,
+        help="draw atom spheres inside the surface, visible when --surface-opacity < 1 "
+        "(default: shown)",
     )
     parser.add_argument(
         "--atom-scale",
@@ -236,9 +238,9 @@ def main():
     parser.add_argument(
         "--surface-opacity",
         type=float,
-        default=1.0,
+        default=0.5,
         help="opacity of the density surface, from 0 (invisible) to 1 (opaque); "
-        "lower it together with --show-atoms to see the atoms inside (default: 1.0)",
+        "below 1 the atoms inside are visible (default: 0.5)",
     )
     args = parser.parse_args()
     if not 0.0 <= args.surface_opacity <= 1.0:
