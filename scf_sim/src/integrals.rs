@@ -29,6 +29,7 @@ pub(crate) fn nuclear_attraction(a: &BasisFunction, b: &BasisFunction, nuclei: &
 /// Unlike [`nuclear_attraction`], this is the bare (positive) Coulomb integral: the
 /// primitive nuclear attraction includes the minus sign of an attractive interaction,
 /// which is undone here.
+#[cfg(test)]
 pub(crate) fn coulomb_potential(a: &BasisFunction, b: &BasisFunction, point: &Point) -> f64 {
     -contracted_pair_with_nucleus(a, b, point, primitive_nuclear_attraction)
 }
@@ -445,7 +446,241 @@ fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> Poin
     )
 }
 
+// ------ electrostatic potential of a density ----------------------------
+
+/// Primitive pairs whose Gaussian overlap prefactor `exp(-mu |A - B|^2)` is below this
+/// value contribute nothing measurable to the potential and are skipped.
+const PAIR_SCREENING_THRESHOLD: f64 = 1e-15;
+
+/// The product of two primitive shells, contracted with the density matrix and expanded in
+/// Hermite Gaussians centered at `center`: its Coulomb potential at a point C is
+/// `sum_(t,u,v) coefficient * R_tuv(exponent, center - C)`.
+struct HermiteDistribution {
+    exponent: f64,
+    center: Point,
+    /// Highest `t + u + v` of the expansion.
+    max_l: usize,
+    /// `(index in the R table of side max_l + 1, coefficient)` of the nonzero terms.
+    terms: Vec<(usize, f64)>,
+}
+
+/// Evaluates `sum_(mu,nu) P[mu,nu] (mu nu | 1/|r - C|)` at arbitrary points C, with all the
+/// point-independent work (Hermite expansions, normalization, density weights) done once.
+pub(crate) struct CoulombPotentialEvaluator {
+    distributions: Vec<HermiteDistribution>,
+    boys: Vec<f64>,
+    r: Vec<f64>,
+}
+
+impl CoulombPotentialEvaluator {
+    pub(crate) fn new(functions: &[BasisFunction], density: &ndarray::Array2<f64>) -> Self {
+        // Consecutive functions sharing a shell are expanded together.
+        let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
+        let mut start = 0;
+        for i in 1..=functions.len() {
+            if i == functions.len()
+                || !std::sync::Arc::ptr_eq(&functions[i].shell, &functions[start].shell)
+            {
+                groups.push(start..i);
+                start = i;
+            }
+        }
+
+        let total_l = |f: &BasisFunction| {
+            let (x, y, z) = f.angular_momentum;
+            (x + y + z) as usize
+        };
+
+        let mut distributions = Vec::new();
+        for (ga, group_a) in groups.iter().enumerate() {
+            for (gb, group_b) in groups.iter().enumerate().skip(ga) {
+                let shell_a = &functions[group_a.start].shell;
+                let shell_b = &functions[group_b.start].shell;
+                let max_l = group_a
+                    .clone()
+                    .map(|i| total_l(&functions[i]))
+                    .max()
+                    .unwrap()
+                    + group_b
+                        .clone()
+                        .map(|j| total_l(&functions[j]))
+                        .max()
+                        .unwrap();
+                let dim = max_l + 1;
+                // (ij) and (ji) both appear in the sum over the density matrix.
+                let symmetry = if ga == gb { 1.0 } else { 2.0 };
+
+                for prim_a in &shell_a.primitives {
+                    for prim_b in &shell_b.primitives {
+                        let (p, mu, r2) = gaussian_pair_params(prim_a, prim_b);
+                        let overlap_prefactor = (-mu * r2).exp();
+                        if overlap_prefactor < PAIR_SCREENING_THRESHOLD {
+                            continue;
+                        }
+                        let center = weighted_center(prim_a, prim_b, p);
+                        let pa = center.sub(&prim_a.center()).coordinates();
+                        let pb = center.sub(&prim_b.center()).coordinates();
+
+                        let mut coefficients = vec![0.0; dim * dim * dim];
+                        for i in group_a.clone() {
+                            for j in group_b.clone() {
+                                let (fa, fb) = (&functions[i], &functions[j]);
+                                let weight = symmetry
+                                    * density[[i, j]]
+                                    * fa.normalized_coefficient(prim_a)
+                                    * fb.normalized_coefficient(prim_b);
+                                if weight == 0.0 {
+                                    continue;
+                                }
+                                let (la, lb) = (fa.angular_momentum, fb.angular_momentum);
+                                let e_x = hermite_coefficients(la.0, lb.0, pa[0], pb[0], p);
+                                let e_y = hermite_coefficients(la.1, lb.1, pa[1], pb[1], p);
+                                let e_z = hermite_coefficients(la.2, lb.2, pa[2], pb[2], p);
+                                for (t, ex) in e_x.iter().enumerate() {
+                                    for (u, ey) in e_y.iter().enumerate() {
+                                        for (v, ez) in e_z.iter().enumerate() {
+                                            coefficients[(t * dim + u) * dim + v] +=
+                                                weight * ex * ey * ez;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+
+                        let scale = 2.0 * PI / p * overlap_prefactor;
+                        let terms: Vec<(usize, f64)> = coefficients
+                            .iter()
+                            .enumerate()
+                            .filter(|&(_, c)| *c != 0.0)
+                            .map(|(index, c)| (index, scale * c))
+                            .collect();
+                        if !terms.is_empty() {
+                            distributions.push(HermiteDistribution {
+                                exponent: p,
+                                center,
+                                max_l,
+                                terms,
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        let max_l = distributions.iter().map(|d| d.max_l).max().unwrap_or(0);
+        Self {
+            distributions,
+            boys: vec![0.0; max_l + 1],
+            r: vec![0.0; (max_l + 1).pow(4)],
+        }
+    }
+
+    /// The (positive) electronic Coulomb potential at `point`.
+    pub(crate) fn evaluate(&mut self, point: &Point) -> f64 {
+        let mut sum = 0.0;
+        for d in &self.distributions {
+            let pc = d.center.sub(point);
+            let t = d.exponent * pc.norm_squared();
+            if d.max_l == 0 {
+                boys_all(0, t, &mut self.boys);
+                sum += d.terms[0].1 * self.boys[0];
+                continue;
+            }
+            hermite_coulomb(
+                d.max_l,
+                d.exponent,
+                t,
+                [pc.x, pc.y, pc.z],
+                &mut self.boys,
+                &mut self.r,
+            );
+            for &(index, c) in &d.terms {
+                sum += c * self.r[index];
+            }
+        }
+        sum
+    }
+}
+
+/// Fills `r` with the Hermite Coulomb integrals `R^n_tuv(alpha, pc)` for every
+/// `n + t + u + v <= l`, stored at `((n * dim + t) * dim + u) * dim + v` with `dim = l + 1`
+/// (so the `n = 0` ones come first, at `(t * dim + u) * dim + v`).
+fn hermite_coulomb(l: usize, alpha: f64, t: f64, pc: [f64; 3], boys: &mut [f64], r: &mut [f64]) {
+    boys_all(l, t, boys);
+    let dim = l + 1;
+    let block = dim * dim * dim;
+    let mut factor = 1.0;
+    for (n, f) in boys.iter().enumerate().take(l + 1) {
+        r[n * block] = factor * f;
+        factor *= -2.0 * alpha;
+    }
+    for n in (0..l).rev() {
+        let here = n * block;
+        let up = (n + 1) * block;
+        let max = l - n;
+        for tx in 0..=max {
+            for ty in 0..=(max - tx) {
+                for tz in 0..=(max - tx - ty) {
+                    let value = if tx > 0 {
+                        let mut v = pc[0] * r[up + ((tx - 1) * dim + ty) * dim + tz];
+                        if tx > 1 {
+                            v += (tx - 1) as f64 * r[up + ((tx - 2) * dim + ty) * dim + tz];
+                        }
+                        v
+                    } else if ty > 0 {
+                        let mut v = pc[1] * r[up + (ty - 1) * dim + tz];
+                        if ty > 1 {
+                            v += (ty - 1) as f64 * r[up + (ty - 2) * dim + tz];
+                        }
+                        v
+                    } else if tz > 0 {
+                        let mut v = pc[2] * r[up + tz - 1];
+                        if tz > 1 {
+                            v += (tz - 1) as f64 * r[up + tz - 2];
+                        }
+                        v
+                    } else {
+                        continue;
+                    };
+                    r[here + (tx * dim + ty) * dim + tz] = value;
+                }
+            }
+        }
+    }
+}
+
 // ------ special functions -----------------------------------------------
+
+/// Fills `out[0..=n_max]` with `F_0(t), ..., F_n_max(t)`: the highest order from the power
+/// series (or the closed form for large `t`) and the others by the downward recursion
+/// `F_m = (2t F_(m+1) + exp(-t)) / (2m + 1)`, which is stable.
+fn boys_all(n_max: usize, t: f64, out: &mut [f64]) {
+    if t >= BOYS_ASYMPTOTIC_THRESHOLD {
+        let exp_t = (-t).exp();
+        let mut f = 0.5 * (PI / t).sqrt();
+        out[0] = f;
+        for m in 0..n_max {
+            f = (((2 * m + 1) as f64) * f - exp_t) / (2.0 * t);
+            out[m + 1] = f;
+        }
+        return;
+    }
+    let exp_t = (-t).exp();
+    let mut term = 1.0 / (2 * n_max + 1) as f64;
+    let mut sum = term;
+    let mut k = 1;
+    while term > sum * f64::EPSILON {
+        term *= 2.0 * t / (2 * n_max + 2 * k + 1) as f64;
+        sum += term;
+        k += 1;
+    }
+    let mut f = exp_t * sum;
+    out[n_max] = f;
+    for m in (0..n_max).rev() {
+        f = (2.0 * t * f + exp_t) / (2 * m + 1) as f64;
+        out[m] = f;
+    }
+}
 
 /// Above this argument, `erf(sqrt(t))` equals 1 to double precision, so `F_0` has a closed
 /// form and the upward recursion is numerically stable.
@@ -518,6 +753,22 @@ mod tests {
             ((actual - expected) / expected).abs() < 1e-11,
             "F_{n}({t}): expected {expected} but was {actual}."
         );
+    }
+
+    #[rstest]
+    fn test_all_boys_functions_match_single_ones(
+        #[values(0, 1, 3, 6, 12)] n_max: usize,
+        #[values(0.0, 1e-9, 0.3, 2.0, 15.0, 39.9, 40.0, 75.0)] t: f64,
+    ) {
+        let mut all = vec![0.0; n_max + 1];
+        boys_all(n_max, t, &mut all);
+        for (n, actual) in all.iter().enumerate() {
+            let expected = boys(n, t);
+            assert!(
+                ((actual - expected) / expected).abs() < 1e-13,
+                "F_{n}({t}): expected {expected} but was {actual}."
+            );
+        }
     }
 
     #[test]

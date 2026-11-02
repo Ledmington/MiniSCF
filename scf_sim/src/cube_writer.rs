@@ -1,4 +1,5 @@
 use crate::basis::BasisSet;
+use crate::integrals::CoulombPotentialEvaluator;
 use crate::sim::density_matrix;
 use ndarray::Array2;
 use scf_core::Atom;
@@ -128,7 +129,7 @@ impl CubeWriter {
 
 /// Evaluates `f` at every point of `grid`, in the same x-slowest/z-fastest order the cube
 /// format expects.
-fn evaluate_grid(grid: &Grid, f: impl Fn(&Point) -> f64) -> Vec<f64> {
+fn evaluate_grid(grid: &Grid, mut f: impl FnMut(&Point) -> f64) -> Vec<f64> {
     let mut values = Vec::new();
 
     for ix in 0..grid.nx {
@@ -178,12 +179,13 @@ fn evaluate_electrostatic_potential(
     atoms: &[Atom],
     density: &Array2<f64>,
 ) -> Vec<f64> {
+    let mut electronic = CoulombPotentialEvaluator::new(&basis.functions, density);
     evaluate_grid(grid, |r| {
         let v_nuclear: f64 = atoms
             .iter()
             .map(|a| (a.charge as f64) / r.distance(&a.position).max(MIN_NUCLEAR_DISTANCE))
             .sum();
-        let v_electronic = basis.electronic_potential(r, density);
+        let v_electronic = electronic.evaluate(r);
 
         v_nuclear - v_electronic
     })

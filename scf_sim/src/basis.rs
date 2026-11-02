@@ -119,6 +119,8 @@ impl BasisSet {
 
     /// The electronic contribution to the electrostatic potential at `point`, i.e.
     /// sum_{mu,nu} P[mu,nu] * (mu nu | 1/|r - point|), given the AO density matrix.
+    /// Straightforward reference for [`integrals::CoulombPotentialEvaluator`].
+    #[cfg(test)]
     pub(crate) fn electronic_potential(&self, point: &Point, density: &Array2<f64>) -> f64 {
         let n = self.num_contracted_gaussians();
         let mut sum = 0.0;
@@ -544,6 +546,64 @@ mod tests {
             (actual - 1.0 / 20.0).abs() < 1e-12,
             "Expected 1/20 far away but was {actual}."
         );
+    }
+
+    #[test]
+    fn test_coulomb_potential_evaluator_matches_reference() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+
+        // Contracted shells of every angular momentum on three centers.
+        let mut functions = Vec::new();
+        for (angular, center) in [
+            (AngularMomentum::S, Point::new(0.0, 0.0, 0.0)),
+            (AngularMomentum::P, Point::new(0.0, 0.0, 0.0)),
+            (AngularMomentum::D, Point::new(1.1, -0.4, 0.3)),
+            (AngularMomentum::F, Point::new(-0.5, 0.9, -1.2)),
+            (AngularMomentum::S, Point::new(-0.5, 0.9, -1.2)),
+        ] {
+            let shell = Arc::new(Shell {
+                center,
+                primitives: vec![
+                    PrimitiveGaussian::new(0.4, rng.random_range(2.0..6.0), center),
+                    PrimitiveGaussian::new(0.7, rng.random_range(0.1..1.5), center),
+                ],
+            });
+            for angular_momentum in angular.cartesian_components() {
+                functions.push(BasisFunction {
+                    shell: Arc::clone(&shell),
+                    angular_momentum,
+                });
+            }
+        }
+        let n = functions.len();
+        let mut density = Array2::zeros((n, n));
+        for i in 0..n {
+            for j in 0..=i {
+                let value = rng.random_range(-1.0..1.0);
+                density[[i, j]] = value;
+                density[[j, i]] = value;
+            }
+        }
+        let basis = BasisSet { functions };
+        let mut evaluator =
+            integrals::CoulombPotentialEvaluator::new(&basis.functions, &density);
+
+        for point in [
+            Point::new(0.0, 0.0, 0.0),
+            Point::new(1.1, -0.4, 0.3),
+            Point::new(0.2, 0.1, -0.3),
+            Point::new(2.0, 1.5, -1.0),
+            Point::new(-4.0, 3.0, 5.0),
+            Point::new(12.0, 0.0, 0.0),
+        ] {
+            let expected = basis.electronic_potential(&point, &density);
+            let actual = evaluator.evaluate(&point);
+            assert!(
+                (actual - expected).abs() < 1e-10 * expected.abs().max(1.0),
+                "At {point:?} expected {expected} but was {actual} (seed: {seed})."
+            );
+        }
     }
 
     #[test]
