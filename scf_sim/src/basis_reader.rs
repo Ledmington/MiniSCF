@@ -1,8 +1,9 @@
 use element::Element;
-use scf_core::Atom;
-use std::{collections::HashMap, fs, time::Instant};
+use scf_core::{Atom, point::Point};
+use std::{collections::HashMap, fs, sync::Arc, time::Instant};
 
-use crate::basis::{AngularMomentum, BasisSet, PrimitiveGaussian, Shell};
+use crate::basis::{AngularMomentum, BasisFunction, BasisSet, PrimitiveGaussian, Shell};
+use crate::integrals;
 
 #[derive(PartialEq, Debug)]
 pub struct ShellTemplate {
@@ -28,14 +29,71 @@ pub fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
     Ok(result)
 }
 
+/// The kind of shell block announced by a shell header such as `C    SP`.
+#[derive(Clone)]
+enum ShellKind {
+    /// A combined SP block: the first coefficient column is the s contraction, the second
+    /// one the p contraction, sharing the same exponents.
+    Sp,
+    /// A block with a single angular momentum. With more than one coefficient column it is
+    /// a general contraction (as in the Dunning cc-pVXZ sets): each column is a separate
+    /// contracted shell sharing the same exponents.
+    Single(AngularMomentum),
+}
+
+/// The shell block being read: its element, kind and the shells built so far (one per
+/// coefficient column, created when the first primitive line is read).
+struct PendingBlock {
+    symbol: String,
+    kind: ShellKind,
+    shells: Vec<ShellTemplate>,
+}
+
+impl PendingBlock {
+    fn add_primitive(&mut self, exponent: f64, coefficients: &[f64]) {
+        if self.shells.is_empty() {
+            self.shells = match &self.kind {
+                ShellKind::Sp => vec![AngularMomentum::S, AngularMomentum::P],
+                ShellKind::Single(angular) => vec![angular.clone(); coefficients.len()],
+            }
+            .into_iter()
+            .map(|angular| ShellTemplate {
+                angular,
+                primitives: Vec::new(),
+            })
+            .collect();
+        }
+
+        assert_eq!(
+            coefficients.len(),
+            self.shells.len(),
+            "Expected {} contraction coefficients for exponent {exponent} of element '{}' but found {}",
+            self.shells.len(),
+            self.symbol,
+            coefficients.len()
+        );
+
+        for (shell, &coefficient) in self.shells.iter_mut().zip(coefficients) {
+            // In general contractions most columns are zero for most exponents: such
+            // primitives do not contribute and would only slow down the integrals.
+            if coefficient != 0.0 {
+                shell.primitives.push((exponent, coefficient));
+            }
+        }
+    }
+
+    fn flush_into(self, library: &mut BasisLibrary) {
+        let element = element::from_symbol(self.symbol);
+        library.entry(element).or_default().extend(self.shells);
+    }
+}
+
 fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
     let mut library: HashMap<Element, Vec<ShellTemplate>> = HashMap::new();
 
-    let mut current_element: Option<String> = None;
-    let mut current_shell: Option<ShellTemplate> = None;
-    let mut current_shell_p: Option<ShellTemplate> = None; // for SP shells
+    let mut current_block: Option<PendingBlock> = None;
     let mut spherical = false;
-    let mut has_d_shells = false;
+    let mut has_high_angular_momentum = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
@@ -57,98 +115,54 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
-            if let Some(symbol) = current_element.take() {
-                let element = element::from_symbol(symbol);
-
-                if let Some(shell) = current_shell.take() {
-                    library.entry(element.clone()).or_default().push(shell);
-                }
-
-                if let Some(shell_p) = current_shell_p.take() {
-                    library.entry(element).or_default().push(shell_p);
-                }
+            if let Some(block) = current_block.take() {
+                block.flush_into(&mut library);
             }
 
-            current_element = Some(fields[0].to_string());
-
-            match fields[1] {
-                "S" => {
-                    current_shell = Some(ShellTemplate {
-                        angular: AngularMomentum::S,
-                        primitives: Vec::new(),
-                    });
-                }
-
-                "P" => {
-                    current_shell = Some(ShellTemplate {
-                        angular: AngularMomentum::P,
-                        primitives: Vec::new(),
-                    });
-                }
-
-                "D" => {
-                    has_d_shells = true;
-                    current_shell = Some(ShellTemplate {
-                        angular: AngularMomentum::D,
-                        primitives: Vec::new(),
-                    });
-                }
-
-                "SP" => {
-                    current_shell = Some(ShellTemplate {
-                        angular: AngularMomentum::S,
-                        primitives: Vec::new(),
-                    });
-
-                    current_shell_p = Some(ShellTemplate {
-                        angular: AngularMomentum::P,
-                        primitives: Vec::new(),
-                    });
-                }
-
+            let kind = match fields[1] {
+                "S" => ShellKind::Single(AngularMomentum::S),
+                "P" => ShellKind::Single(AngularMomentum::P),
+                "D" => ShellKind::Single(AngularMomentum::D),
+                "F" => ShellKind::Single(AngularMomentum::F),
+                "SP" => ShellKind::Sp,
                 _ => panic!("Unknown orbital '{}'", fields[1]),
+            };
+            if matches!(fields[1], "D" | "F") {
+                has_high_angular_momentum = true;
             }
+
+            current_block = Some(PendingBlock {
+                symbol: fields[0].to_string(),
+                kind,
+                shells: Vec::new(),
+            });
 
             continue;
         }
 
-        // Primitive coefficients
+        // Primitive: an exponent followed by one contraction coefficient per shell
         if fields.len() >= 2 {
             let exponent = fields[0].parse::<f64>().unwrap();
-            let coeff = fields[1].parse::<f64>().unwrap();
+            let coefficients: Vec<f64> = fields[1..]
+                .iter()
+                .map(|c| c.parse::<f64>().unwrap())
+                .collect();
 
-            current_shell
+            current_block
                 .as_mut()
-                .unwrap()
-                .primitives
-                .push((exponent, coeff));
-
-            // SP: third column is the P contraction coefficient
-            if fields.len() >= 3
-                && let Some(ref mut shell_p) = current_shell_p
-            {
-                let coeff_p = fields[2].parse::<f64>().unwrap();
-                shell_p.primitives.push((exponent, coeff_p));
-            }
+                .expect("Found primitive coefficients before any shell header")
+                .add_primitive(exponent, &coefficients);
         }
     }
 
     // Final flush
-    if let Some(symbol) = current_element.take() {
-        let element = element::from_symbol(symbol);
-
-        if let Some(shell) = current_shell.take() {
-            library.entry(element.clone()).or_default().push(shell);
-        }
-
-        if let Some(shell_p) = current_shell_p.take() {
-            library.entry(element).or_default().push(shell_p);
-        }
+    if let Some(block) = current_block.take() {
+        block.flush_into(&mut library);
     }
 
-    if spherical && has_d_shells {
+    if spherical && has_high_angular_momentum {
         log::warn!(
-            "The basis set is declared SPHERICAL, but d shells are always built as 6 Cartesian functions: energies will differ from reference calculations that use 5 spherical d functions."
+            "The basis set is declared SPHERICAL, but d and f shells are always built as Cartesian functions (6 d, 10 f): energies will differ from reference calculations that use 5 spherical d and 7 spherical f functions."
         );
     }
 
@@ -167,13 +181,16 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
         });
 
         for template in templates {
-            let primitives: Vec<PrimitiveGaussian> = template
+            let raw_primitives: Vec<PrimitiveGaussian> = template
                 .primitives
                 .iter()
                 .map(|&(exponent, coeff)| PrimitiveGaussian::new(coeff, exponent, atom.position))
                 .collect();
+            let primitives =
+                normalize_contraction(raw_primitives, atom.position, &template.angular);
 
-            // One basis function per Cartesian component: s, px/py/pz, or the 6 d functions.
+            // One basis function per Cartesian component: s, px/py/pz, the 6 d functions or
+            // the 10 f functions.
             for component in template.angular.cartesian_components() {
                 shells.push((
                     Shell {
@@ -187,6 +204,42 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
     }
 
     BasisSet::new(shells)
+}
+
+/// Contracted shells whose self-overlap is within this tolerance of 1 are used as written.
+const CONTRACTION_NORMALIZATION_TOLERANCE: f64 = 1e-10;
+
+/// Rescales the contraction coefficients of a shell so that its contracted functions are
+/// normalized.
+///
+/// Basis set files print the coefficients with a limited number of digits (6 for the
+/// Dunning cc-pVXZ sets on the Basis Set Exchange), so contractions are only normalized to
+/// about 1e-6. Since the primitives share the same center, the self-overlap of a contracted
+/// Cartesian function only depends on the total angular momentum, not on its components:
+/// a single factor normalizes all the functions of the shell. Shells that are already
+/// normalized within [`CONTRACTION_NORMALIZATION_TOLERANCE`] are left untouched.
+fn normalize_contraction(
+    primitives: Vec<PrimitiveGaussian>,
+    center: Point,
+    angular: &AngularMomentum,
+) -> Vec<PrimitiveGaussian> {
+    let probe = BasisFunction {
+        shell: Arc::new(Shell { center, primitives }),
+        angular_momentum: angular.cartesian_components()[0],
+    };
+    let self_overlap = integrals::overlap(&probe, &probe);
+    let Shell {
+        primitives: raw, ..
+    } = Arc::unwrap_or_clone(probe.shell);
+
+    if (self_overlap - 1.0).abs() <= CONTRACTION_NORMALIZATION_TOLERANCE {
+        return raw;
+    }
+
+    let factor = 1.0 / self_overlap.sqrt();
+    raw.iter()
+        .map(|p| p.with_scaled_coefficient(factor))
+        .collect()
 }
 
 #[cfg(test)]
@@ -410,5 +463,173 @@ END
                 }
             );
         }
+    }
+
+    /// The cc-pVTZ basis for hydrogen and an f shell, as written by the Basis Set Exchange:
+    /// Dunning sets use general contractions, with one coefficient column per contracted
+    /// shell.
+    const CC_PVTZ_SAMPLE: &str = "BASIS \"ao basis\" SPHERICAL PRINT
+#BASIS SET: (5s,2p,1d) -> [3s,2p,1d]
+H    S
+      3.387000E+01           0.000000E+00           6.068000E-03           0.000000E+00
+      5.095000E+00           0.000000E+00           4.530800E-02           0.000000E+00
+      1.159000E+00           0.000000E+00           2.028220E-01           0.000000E+00
+      3.258000E-01           1.000000E+00           5.039030E-01           0.000000E+00
+      1.027000E-01           0.000000E+00           3.834210E-01           1.000000E+00
+H    P
+      1.407000E+00           1.000000E+00           0.000000E+00
+      3.880000E-01           0.000000E+00           1.000000E+00
+H    D
+      1.057000E+00           1.0000000
+O    F
+      1.428000E+00           1.0000000
+END
+";
+
+    #[test]
+    fn general_contractions_are_split_into_shells() {
+        let library = parse_nwchem_basis_text(CC_PVTZ_SAMPLE);
+        let hydrogen = &library[&element::HYDROGEN];
+
+        // [3s,2p,1d]: one shell per coefficient column, without the zero coefficients.
+        assert_eq!(
+            *hydrogen,
+            vec![
+                ShellTemplate {
+                    angular: AngularMomentum::S,
+                    primitives: vec![(3.258e-1, 1.0)],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::S,
+                    primitives: vec![
+                        (3.387e1, 6.068e-3),
+                        (5.095, 4.5308e-2),
+                        (1.159, 2.02822e-1),
+                        (3.258e-1, 5.03903e-1),
+                        (1.027e-1, 3.83421e-1),
+                    ],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::S,
+                    primitives: vec![(1.027e-1, 1.0)],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::P,
+                    primitives: vec![(1.407, 1.0)],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::P,
+                    primitives: vec![(3.88e-1, 1.0)],
+                },
+                ShellTemplate {
+                    angular: AngularMomentum::D,
+                    primitives: vec![(1.057, 1.0)],
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn f_shell() {
+        let library = parse_nwchem_basis_text(CC_PVTZ_SAMPLE);
+        assert_eq!(
+            library[&element::OXYGEN],
+            vec![ShellTemplate {
+                angular: AngularMomentum::F,
+                primitives: vec![(1.428, 1.0)],
+            }]
+        );
+
+        let center = Point::new(-0.3, 0.2, 1.1);
+        let basis = build_basis(
+            &[
+                Atom {
+                    element: element::HYDROGEN,
+                    position: center,
+                    charge: 1,
+                },
+                Atom {
+                    element: element::OXYGEN,
+                    position: center,
+                    charge: 8,
+                },
+            ],
+            &library,
+        );
+
+        // Hydrogen: 3 s + 2 * 3 p + 6 d = 15 functions; oxygen: 10 Cartesian f functions.
+        assert_eq!(basis.functions.len(), 25);
+        let f_components: Vec<_> = basis.functions[15..]
+            .iter()
+            .map(|bf| bf.angular_momentum)
+            .collect();
+        assert_eq!(f_components, AngularMomentum::F.cartesian_components());
+    }
+
+    #[test]
+    fn contractions_are_normalized() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = Point::new(
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+            rng.random_range(-10.0..10.0),
+        );
+
+        for angular in [
+            AngularMomentum::S,
+            AngularMomentum::P,
+            AngularMomentum::D,
+            AngularMomentum::F,
+        ] {
+            let primitives: Vec<_> = (0..4)
+                .map(|_| {
+                    PrimitiveGaussian::new(
+                        rng.random_range(0.1..2.0),
+                        rng.random_range(0.05..50.0),
+                        center,
+                    )
+                })
+                .collect();
+            let normalized = normalize_contraction(primitives, center, &angular);
+            let shell = Arc::new(Shell {
+                center,
+                primitives: normalized,
+            });
+            for angular_momentum in angular.cartesian_components() {
+                let bf = BasisFunction {
+                    shell: Arc::clone(&shell),
+                    angular_momentum,
+                };
+                let actual = integrals::overlap(&bf, &bf);
+                assert!(
+                    (actual - 1.0).abs() < 1e-12,
+                    "Expected {angular_momentum:?} to be normalized but its self-overlap was {actual} (seed: {seed})."
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn normalized_contractions_are_left_untouched() {
+        let center = Point::new(0.1, 0.2, 0.3);
+        let primitives = vec![PrimitiveGaussian::new(1.0, 1.057, center)];
+        assert_eq!(
+            normalize_contraction(primitives.clone(), center, &AngularMomentum::D),
+            primitives
+        );
+    }
+
+    #[test]
+    #[should_panic(expected = "Expected 2 contraction coefficients")]
+    fn inconsistent_number_of_coefficients() {
+        parse_nwchem_basis_text(
+            "BASIS \"ao basis\" CARTESIAN PRINT
+H    S
+      3.387000E+01           0.1           0.2
+      5.095000E+00           0.3
+END
+",
+        );
     }
 }

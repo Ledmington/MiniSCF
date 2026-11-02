@@ -24,6 +24,14 @@ impl PrimitiveGaussian {
         }
     }
 
+    /// The same primitive with its contraction coefficient multiplied by `factor`.
+    pub(crate) fn with_scaled_coefficient(&self, factor: f64) -> Self {
+        PrimitiveGaussian {
+            contraction_coefficient: self.contraction_coefficient * factor,
+            ..self.clone()
+        }
+    }
+
     pub(crate) fn alpha(&self) -> f64 {
         self.alpha
     }
@@ -211,17 +219,20 @@ pub(crate) enum AngularMomentum {
     S,
     P,
     D,
+    F,
 }
 
 impl AngularMomentum {
     /// The Cartesian components `(lx, ly, lz)` with `lx + ly + lz = l` of a shell, in the
-    /// conventional order (e.g. xx, xy, xz, yy, yz, zz for d). Shells are Cartesian: a d
-    /// shell has 6 components, not the 5 of the spherical (pure) harmonics.
+    /// conventional order (e.g. xx, xy, xz, yy, yz, zz for d and xxx, xxy, xxz, xyy, xyz,
+    /// xzz, yyy, yyz, yzz, zzz for f). Shells are Cartesian: a d shell has 6 components and
+    /// an f shell 10, not the 5 and 7 of the spherical (pure) harmonics.
     pub(crate) fn cartesian_components(&self) -> Vec<(u8, u8, u8)> {
         let l = match self {
             AngularMomentum::S => 0,
             AngularMomentum::P => 1,
             AngularMomentum::D => 2,
+            AngularMomentum::F => 3,
         };
         let mut components = Vec::new();
         for lx in (0..=l).rev() {
@@ -443,6 +454,94 @@ mod tests {
                 (0, 0, 2)
             ]
         );
+        assert_eq!(
+            AngularMomentum::F.cartesian_components(),
+            vec![
+                (3, 0, 0),
+                (2, 1, 0),
+                (2, 0, 1),
+                (1, 2, 0),
+                (1, 1, 1),
+                (1, 0, 2),
+                (0, 3, 0),
+                (0, 2, 1),
+                (0, 1, 2),
+                (0, 0, 3)
+            ]
+        );
+    }
+
+    /// `(2n - 1)!!` as a float, with `(-1)!! = 1`.
+    fn odd_double_factorial(n: u8) -> f64 {
+        (1..=n).map(|k| f64::from(2 * k - 1)).product()
+    }
+
+    #[test]
+    fn test_overlap_f() {
+        let seed = rand::rng().random();
+        let mut rng = ChaCha8Rng::seed_from_u64(seed);
+        let center = random_center(&mut rng);
+        let alpha = rng.random_range(0.1..5.0);
+
+        let f = single_primitive_shell(alpha, center, &AngularMomentum::F);
+        let p = single_primitive_shell(alpha, center, &AngularMomentum::P);
+
+        // Normalized Cartesian Gaussians with the same exponent and center: the overlap
+        // factorizes over the axes and, with a_i + b_i = 2 m_i along each axis, it is
+        // prod_i (2 m_i - 1)!! / sqrt((2 a_i - 1)!! (2 b_i - 1)!!), or 0 if any a_i + b_i
+        // is odd. E.g. <f_xxx|f_xxx> = 1, <f_xxx|f_xyy> = 3/sqrt(15 * 3) and
+        // <p_x|f_xxx> = 3/sqrt(15).
+        let expected_overlap = |a: (u8, u8, u8), b: (u8, u8, u8)| {
+            let mut value = 1.0;
+            for (ai, bi) in [(a.0, b.0), (a.1, b.1), (a.2, b.2)] {
+                if (ai + bi) % 2 == 1 {
+                    return 0.0;
+                }
+                value *= odd_double_factorial((ai + bi) / 2)
+                    / (odd_double_factorial(ai) * odd_double_factorial(bi)).sqrt();
+            }
+            value
+        };
+
+        for a in &f {
+            for b in f.iter().chain(&p) {
+                let expected = expected_overlap(a.angular_momentum, b.angular_momentum);
+                let actual = integrals::overlap(a, b);
+                assert!(
+                    (actual - expected).abs() < 1e-10,
+                    "Expected overlap between {:?} and {:?} to be {expected} but was {actual} (seed: {seed}).",
+                    a.angular_momentum,
+                    b.angular_momentum
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_compute_f() {
+        let alpha: f64 = 0.8;
+        let center = Point::new(0.1, -0.2, 0.3);
+        let r = Point::new(0.6, 0.4, -0.5);
+        let (dx, dy, dz) = (0.5, 0.6, -0.8);
+        let radial = (-alpha * (dx * dx + dy * dy + dz * dz)).exp();
+        let base = (2.0 * alpha / PI).powf(0.75) * (4.0 * alpha).powf(1.5);
+
+        let f = single_primitive_shell(alpha, center, &AngularMomentum::F);
+        // xxx: N = base / sqrt(15), xxy: N = base / sqrt(3), xyz: N = base.
+        for (index, expected_angular) in [
+            (0, base / 15.0_f64.sqrt() * dx * dx * dx),
+            (1, base / 3.0_f64.sqrt() * dx * dx * dy),
+            (4, base * dx * dy * dz),
+            (9, base / 15.0_f64.sqrt() * dz * dz * dz),
+        ] {
+            let actual = f[index].compute(&r);
+            let expected_value = expected_angular * radial;
+            assert!(
+                (actual - expected_value).abs() < 1e-12,
+                "Expected {:?} at {r:?} to be {expected_value} but was {actual}.",
+                f[index].angular_momentum
+            );
+        }
     }
 
     /// One basis function per Cartesian component of a single-primitive shell.
@@ -536,12 +635,18 @@ mod tests {
         // The kinetic energy of a normalized Cartesian Gaussian is a sum over the axes of
         // the 1D terms: for a normalized x^n exp(-alpha x^2),
         // <T> = alpha * (4n - 1) / (2 * (2n - 1)), i.e. alpha/2, 3alpha/2 and 7alpha/6 for
-        // n = 0, 1, 2. So it depends on how l is split: d_xx has 13alpha/6, d_xy 7alpha/2.
+        // n = 0, 1, 2 and 11alpha/10 for n = 3. So it depends on how l is split: d_xx has
+        // 13alpha/6, d_xy 7alpha/2.
         let one_dimensional = |n: u8| {
             let order = f64::from(n);
             alpha * (4.0 * order - 1.0) / (2.0 * (2.0 * order - 1.0))
         };
-        for angular in [AngularMomentum::S, AngularMomentum::P, AngularMomentum::D] {
+        for angular in [
+            AngularMomentum::S,
+            AngularMomentum::P,
+            AngularMomentum::D,
+            AngularMomentum::F,
+        ] {
             for bf in single_primitive_shell(alpha, center, &angular) {
                 let actual = integrals::kinetic_energy(&bf, &bf);
                 let (lx, ly, lz) = bf.angular_momentum;
@@ -574,6 +679,7 @@ mod tests {
             (AngularMomentum::S, 2.0 / PI.sqrt()),
             (AngularMomentum::P, 4.0 / (3.0 * PI.sqrt())),
             (AngularMomentum::D, 16.0 / (15.0 * PI.sqrt())),
+            (AngularMomentum::F, 32.0 / (35.0 * PI.sqrt())),
         ] {
             for bf in single_primitive_shell(alpha, center, &angular) {
                 let actual = nuclear_attraction(&bf, &bf, std::slice::from_ref(&nucleus));

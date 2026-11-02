@@ -534,6 +534,9 @@ mod tests {
     #[case(0, 2)]
     #[case(1, 2)]
     #[case(2, 2)]
+    #[case(0, 3)]
+    #[case(2, 3)]
+    #[case(3, 3)]
     fn test_symmetric_hermite_coefficients(#[case] ia: u8, #[case] ib: u8) {
         let seed = rand::rng().random();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -545,12 +548,11 @@ mod tests {
         let ab = hermite_coefficients(ia, ib, pa, pb, p);
         let ba = hermite_coefficients(ib, ia, pb, pa, p);
         assert_eq!(ab.len(), ba.len());
+        // Relative tolerance: with f functions the coefficients reach ~1e7, and the two
+        // recursion orders round differently in the last digits.
         assert!(
             (0..ab.len())
-                .map(|i| (ab[i] - ba[i]).abs())
-                .reduce(|a, b| if a > b { a } else { b })
-                .unwrap()
-                < 1e-10,
+                .all(|i| (ab[i] - ba[i]).abs() <= 1e-12 * ab[i].abs().max(ba[i].abs()).max(1.0)),
             "Expected hermite coefficients for AB ({ab:?}) to be equal to those for BA ({ba:?}) (seed: {seed})."
         );
     }
@@ -697,11 +699,30 @@ mod tests {
         }
     }
 
-    const P_COMPONENTS: [(u8, u8, u8); 3] = [(1, 0, 0), (0, 1, 0), (0, 0, 1)];
+    /// The angular momenta raised by one along each axis by the raising checks: the p ones
+    /// give the d integrals, the d ones the f integrals.
+    const LOWER_COMPONENTS: [(u8, u8, u8); 9] = [
+        (1, 0, 0),
+        (0, 1, 0),
+        (0, 0, 1),
+        (2, 0, 0),
+        (1, 1, 0),
+        (1, 0, 1),
+        (0, 2, 0),
+        (0, 1, 1),
+        (0, 0, 2),
+    ];
 
-    /// A representative set of (other) angular momenta, up to d.
-    const OTHER_COMPONENTS: [(u8, u8, u8); 5] =
-        [(0, 0, 0), (0, 1, 0), (1, 0, 1), (0, 2, 0), (1, 1, 0)];
+    /// A representative set of (other) angular momenta, up to f.
+    const OTHER_COMPONENTS: [(u8, u8, u8); 7] = [
+        (0, 0, 0),
+        (0, 1, 0),
+        (1, 0, 1),
+        (0, 2, 0),
+        (1, 1, 0),
+        (1, 1, 1),
+        (0, 0, 3),
+    ];
 
     fn moved(p: &Point, axis: usize, delta: f64) -> Point {
         let mut c = p.coordinates();
@@ -709,7 +730,7 @@ mod tests {
         Point::new(c[0], c[1], c[2])
     }
 
-    /// Checks that the d-type (and higher) integrals computed by `g` agree with the ones
+    /// Checks that the d- and f-type integrals computed by `g` agree with the ones
     /// obtained from lower angular momenta via the identity, for an unnormalized
     /// Cartesian Gaussian `G_l` with exponent `alpha` centered at `A`,
     ///
@@ -718,7 +739,8 @@ mod tests {
     /// where the center derivative is taken by central finite differences. Since `g` is
     /// linear in its first function, the same identity holds for the integrals. This
     /// validates the d-type integrals independently of the McMurchie-Davidson recursion,
-    /// using only the (already validated) s- and p-type ones.
+    /// using only the (already validated) s- and p-type ones, and in turn the f-type ones
+    /// from the d-type ones.
     fn check_angular_momentum_raising(
         name: &str,
         g: impl Fn(&PrimitiveGaussian, &(u8, u8, u8)) -> f64,
@@ -728,7 +750,7 @@ mod tests {
         let center = Point::new(0.3, -0.2, 0.5);
         let at = |c: Point| PrimitiveGaussian::new(1.0, alpha, c);
 
-        for lower in P_COMPONENTS {
+        for lower in LOWER_COMPONENTS {
             for axis in 0..3 {
                 let target = shift(&lower, axis, 1).unwrap();
 
@@ -756,7 +778,7 @@ mod tests {
     }
 
     #[test]
-    fn test_d_overlap_by_raising() {
+    fn test_overlap_by_raising() {
         let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
         for lb in OTHER_COMPONENTS {
             check_angular_momentum_raising(&format!("overlap with {lb:?}"), |a, la| {
@@ -766,7 +788,7 @@ mod tests {
     }
 
     #[test]
-    fn test_d_kinetic_energy_by_raising() {
+    fn test_kinetic_energy_by_raising() {
         let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
         for lb in OTHER_COMPONENTS {
             check_angular_momentum_raising(&format!("kinetic energy with {lb:?}"), |a, la| {
@@ -776,7 +798,7 @@ mod tests {
     }
 
     #[test]
-    fn test_d_nuclear_attraction_by_raising() {
+    fn test_nuclear_attraction_by_raising() {
         let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
         let nucleus = Point::new(0.7, 0.2, -0.6);
         for lb in OTHER_COMPONENTS {
@@ -787,7 +809,7 @@ mod tests {
     }
 
     #[test]
-    fn test_d_electron_repulsion_by_raising() {
+    fn test_electron_repulsion_by_raising() {
         let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
         let c = PrimitiveGaussian::new(1.0, 0.6, Point::new(0.9, -0.5, 0.2));
         let d = PrimitiveGaussian::new(1.0, 2.1, Point::new(0.1, 0.8, -0.7));
@@ -796,6 +818,7 @@ mod tests {
                 ((0, 0, 0), (0, 0, 0)),
                 ((2, 0, 0), (0, 1, 1)),
                 ((0, 0, 1), (1, 0, 1)),
+                ((0, 3, 0), (1, 1, 1)),
             ] {
                 check_angular_momentum_raising(
                     &format!("ERI with {lb:?}, {lc:?}, {ld:?}"),
