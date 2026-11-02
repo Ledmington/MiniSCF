@@ -518,6 +518,35 @@ mod tests {
     }
 
     #[test]
+    fn test_electronic_potential() {
+        let alpha: f64 = 0.7;
+        let center = Point::new(0.3, -0.4, 0.2);
+        let basis = BasisSet {
+            functions: single_primitive_shell(alpha, center, &AngularMomentum::S),
+        };
+        // One electron in a normalized s Gaussian.
+        let density = Array2::from_elem((1, 1), 1.0);
+
+        // At its center, the potential of the charge distribution is <1/r> =
+        // 2 / sqrt(pi) * sqrt(2 alpha), positive: it is the bare Coulomb integral, the sign
+        // of the ESP comes from subtracting it from the nuclear term.
+        let at_center = basis.electronic_potential(&center, &density);
+        let expected = 2.0 / PI.sqrt() * (2.0 * alpha).sqrt();
+        assert!(
+            (at_center - expected).abs() < 1e-12,
+            "Expected {expected} at the center but was {at_center}."
+        );
+
+        // Far away, it is the potential of a point charge.
+        let far = Point::new(center.x + 20.0, center.y, center.z);
+        let actual = basis.electronic_potential(&far, &density);
+        assert!(
+            (actual - 1.0 / 20.0).abs() < 1e-12,
+            "Expected 1/20 far away but was {actual}."
+        );
+    }
+
+    #[test]
     fn test_compute_f() {
         let alpha: f64 = 0.8;
         let center = Point::new(0.1, -0.2, 0.3);

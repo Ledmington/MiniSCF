@@ -25,8 +25,12 @@ pub(crate) fn nuclear_attraction(a: &BasisFunction, b: &BasisFunction, nuclei: &
 /// The (mu nu | 1/|r - point|) integral: the same math as a nuclear attraction integral,
 /// but evaluated at an arbitrary point in space rather than at a real nucleus. Used to
 /// build up the electronic contribution to the electrostatic potential on a grid.
+///
+/// Unlike [`nuclear_attraction`], this is the bare (positive) Coulomb integral: the
+/// primitive nuclear attraction includes the minus sign of an attractive interaction,
+/// which is undone here.
 pub(crate) fn coulomb_potential(a: &BasisFunction, b: &BasisFunction, point: &Point) -> f64 {
-    contracted_pair_with_nucleus(a, b, point, primitive_nuclear_attraction)
+    -contracted_pair_with_nucleus(a, b, point, primitive_nuclear_attraction)
 }
 
 pub(crate) fn electron_repulsion(
