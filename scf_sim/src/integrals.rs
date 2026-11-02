@@ -1136,6 +1136,18 @@ impl BoysTable {
     /// table was built for.
     pub(crate) fn fill(&self, n_max: usize, t: f64, out: &mut [f64]) {
         debug_assert!(n_max <= self.n_max);
+        if t >= BOYS_ASYMPTOTIC_THRESHOLD + 3.0 * n_max as f64 {
+            // F_n(t) = Gamma(n + 1/2) / (2 t^(n + 1/2)) - Gamma(n + 1/2, t) / (2 t^(n + 1/2)),
+            // and the incomplete gamma tail is below exp(-t) t^(n - 1/2) / Gamma(n + 1/2)
+            // relative to F_n, i.e. < 1e-17 for t >= 40 + 3n: drop it (and exp(-t)).
+            let inverse_2t = 0.5 / t;
+            let mut f = 0.5 * (PI / t).sqrt();
+            for (m, value) in out.iter_mut().enumerate().take(n_max + 1) {
+                *value = f;
+                f *= (2 * m + 1) as f64 * inverse_2t;
+            }
+            return;
+        }
         if t >= BOYS_ASYMPTOTIC_THRESHOLD {
             boys_all(n_max, t, out);
             return;
@@ -1280,7 +1292,8 @@ mod tests {
     fn test_boys_table_matches_series(
         #[values(0, 1, 3, 6, 12)] n_max: usize,
         #[values(
-            0.0, 1e-9, 0.049, 0.05, 0.3, 2.0, 15.0, 15.04, 39.96, 39.99, 40.0, 75.0
+            0.0, 1e-9, 0.049, 0.05, 0.3, 2.0, 15.0, 15.04, 39.96, 39.99, 40.0, 42.9, 43.0, 57.9,
+            58.0, 75.0, 76.0, 300.0
         )]
         t: f64,
     ) {
