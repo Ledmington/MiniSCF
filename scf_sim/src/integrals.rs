@@ -491,7 +491,12 @@ impl CoulombPotentialEvaluator {
             (x + y + z) as usize
         };
 
-        let mut distributions = Vec::new();
+        // Primitive pairs with the same exponent and center (e.g. (ab) and (ba) within a
+        // shell, or the S and P shells of an SP block) are merged into one distribution.
+        // Coefficients are accumulated in cubes of side `cube` and repacked at the end.
+        let cube = 2 * functions.iter().map(total_l).max().unwrap_or(0) + 1;
+        let mut merged: Vec<(f64, Point, usize, Vec<f64>)> = Vec::new();
+        let mut index_of = std::collections::HashMap::new();
         for (ga, group_a) in groups.iter().enumerate() {
             for (gb, group_b) in groups.iter().enumerate().skip(ga) {
                 let shell_a = &functions[group_a.start].shell;
@@ -506,7 +511,6 @@ impl CoulombPotentialEvaluator {
                         .map(|j| total_l(&functions[j]))
                         .max()
                         .unwrap();
-                let dim = max_l + 1;
                 // (ij) and (ji) both appear in the sum over the density matrix.
                 let symmetry = if ga == gb { 1.0 } else { 2.0 };
 
@@ -521,7 +525,14 @@ impl CoulombPotentialEvaluator {
                         let pa = center.sub(&prim_a.center()).coordinates();
                         let pb = center.sub(&prim_b.center()).coordinates();
 
-                        let mut coefficients = vec![0.0; dim * dim * dim];
+                        let key = [p, center.x, center.y, center.z].map(f64::to_bits);
+                        let slot = *index_of.entry(key).or_insert_with(|| {
+                            merged.push((p, center, 0, vec![0.0; cube * cube * cube]));
+                            merged.len() - 1
+                        });
+                        let scale = 2.0 * PI / p * overlap_prefactor;
+                        let (_, _, merged_l, coefficients) = &mut merged[slot];
+                        *merged_l = (*merged_l).max(max_l);
                         for i in group_a.clone() {
                             for j in group_b.clone() {
                                 let (fa, fb) = (&functions[i], &functions[j]);
@@ -539,33 +550,51 @@ impl CoulombPotentialEvaluator {
                                 for (t, ex) in e_x.iter().enumerate() {
                                     for (u, ey) in e_y.iter().enumerate() {
                                         for (v, ez) in e_z.iter().enumerate() {
-                                            coefficients[(t * dim + u) * dim + v] +=
-                                                weight * ex * ey * ez;
+                                            coefficients[(t * cube + u) * cube + v] +=
+                                                scale * weight * ex * ey * ez;
                                         }
                                     }
                                 }
                             }
                         }
-
-                        let scale = 2.0 * PI / p * overlap_prefactor;
-                        let terms: Vec<(usize, f64)> = coefficients
-                            .iter()
-                            .enumerate()
-                            .filter(|&(_, c)| *c != 0.0)
-                            .map(|(index, c)| (index, scale * c))
-                            .collect();
-                        if !terms.is_empty() {
-                            distributions.push(HermiteDistribution {
-                                exponent: p,
-                                center,
-                                max_l,
-                                terms,
-                            });
-                        }
                     }
                 }
             }
         }
+
+        let distributions: Vec<HermiteDistribution> = merged
+            .into_iter()
+            .filter_map(|(exponent, center, pair_l, coefficients)| {
+                // Only the nonzero terms matter: cancellations can lower the order.
+                let nonzero =
+                    |t: usize, u: usize, v: usize| coefficients[(t * cube + u) * cube + v] != 0.0;
+                let max_l = (0..=pair_l)
+                    .flat_map(|t| {
+                        (0..=pair_l).flat_map(move |u| (0..=pair_l).map(move |v| (t, u, v)))
+                    })
+                    .filter(|&(t, u, v)| t + u + v <= pair_l && nonzero(t, u, v))
+                    .map(|(t, u, v)| t + u + v)
+                    .max()?;
+                let dim = max_l + 1;
+                let mut terms = Vec::new();
+                for t in 0..dim {
+                    for u in 0..dim {
+                        for v in 0..dim {
+                            let c = coefficients[(t * cube + u) * cube + v];
+                            if c != 0.0 {
+                                terms.push(((t * dim + u) * dim + v, c));
+                            }
+                        }
+                    }
+                }
+                Some(HermiteDistribution {
+                    exponent,
+                    center,
+                    max_l,
+                    terms,
+                })
+            })
+            .collect();
 
         let max_l = distributions.iter().map(|d| d.max_l).max().unwrap_or(0);
         Self {
