@@ -591,16 +591,20 @@ impl CoulombPotentialEvaluator {
             })
             .collect();
 
-        let (spherical, distributions): (Vec<_>, Vec<_>) =
+        let (spherical_distributions, other_distributions): (Vec<_>, Vec<_>) =
             distributions.into_iter().partition(|d| d.max_l == 0);
-        let spherical = spherical
+        let spherical = spherical_distributions
             .into_iter()
             .map(|d| (d.exponent, d.center, d.terms[0].1))
             .collect();
-        let max_l = distributions.iter().map(|d| d.max_l).max().unwrap_or(0);
+        let max_l = other_distributions
+            .iter()
+            .map(|d| d.max_l)
+            .max()
+            .unwrap_or(0);
         Self {
             spherical,
-            distributions,
+            distributions: other_distributions,
             boys_table: BoysTable::new(max_l),
             boys: vec![0.0; max_l + 1],
             r: vec![0.0; (max_l + 1).pow(4)],
@@ -792,7 +796,7 @@ impl BoysTable {
         let minus_d = i as f64 * BOYS_TABLE_STEP - t;
         let row_len = (self.n_max + 1) * BOYS_TABLE_TERMS;
         let row = &self.coefficients[i * row_len..][..(n_max + 1) * BOYS_TABLE_TERMS];
-        for (f, c) in out.iter_mut().zip(row.chunks_exact(BOYS_TABLE_TERMS)) {
+        for (f, c) in out.iter_mut().zip(row.as_chunks::<BOYS_TABLE_TERMS>().0) {
             // Horner's scheme on sum_k F_(n+k)(t0) / k! * (-d)^k.
             *f = c.iter().rev().fold(0.0, |sum, c_k| c_k + sum * minus_d);
         }
