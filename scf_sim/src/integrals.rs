@@ -731,9 +731,9 @@ struct HermiteDistribution {
 /// Evaluates `sum_(mu,nu) P[mu,nu] (mu nu | 1/|r - C|)` at arbitrary points C, with all the
 /// point-independent work (Hermite expansions, normalization, density weights) done once.
 pub(crate) struct CoulombPotentialEvaluator {
-    /// The spherical (`max_l == 0`) distributions as `(exponent, center, coefficient)`,
-    /// evaluated by a dedicated fast path.
-    spherical: Vec<(f64, Point, f64)>,
+    /// The spherical (`max_l == 0`) distributions as `(exponent, center, coefficient,
+    /// charge)`, evaluated by a dedicated fast path; far away they are point charges.
+    spherical: Vec<(f64, Point, f64, f64)>,
     distributions: Vec<HermiteDistribution>,
     boys_table: BoysTable,
     boys: Vec<f64>,
@@ -868,7 +868,10 @@ impl CoulombPotentialEvaluator {
         other_distributions.sort_by_key(|d| d.max_l);
         let spherical = spherical_distributions
             .into_iter()
-            .map(|d| (d.exponent, d.center, d.terms[0].1))
+            .map(|d| {
+                let c = d.terms[0].1;
+                (d.exponent, d.center, c, c * 0.5 * (PI / d.exponent).sqrt())
+            })
             .collect();
         let max_l = other_distributions
             .iter()
@@ -905,11 +908,24 @@ impl CoulombPotentialEvaluator {
         let pz: Lanes = std::array::from_fn(|k| lane(k).z);
 
         let mut sum = [0.0; POTENTIAL_BATCH];
-        for (exponent, center, c) in &self.spherical {
-            for k in 0..POTENTIAL_BATCH {
+        for &(exponent, center, c, charge) in &self.spherical {
+            let r2: Lanes = std::array::from_fn(|k| {
                 let (dx, dy, dz) = (center.x - px[k], center.y - py[k], center.z - pz[k]);
-                let t = exponent * (dx * dx + dy * dy + dz * dz);
-                sum[k] += c * self.boys_table.f0(t);
+                dx * dx + dy * dy + dz * dz
+            });
+            if r2
+                .iter()
+                .all(|r2| exponent * r2 >= BOYS_ASYMPTOTIC_THRESHOLD)
+            {
+                // Far from the whole batch, F_0(t) = sqrt(pi / t) / 2 exactly: the
+                // distribution is a point charge.
+                for k in 0..POTENTIAL_BATCH {
+                    sum[k] += charge / r2[k].sqrt();
+                }
+            } else {
+                for k in 0..POTENTIAL_BATCH {
+                    sum[k] += c * self.boys_table.f0(exponent * r2[k]);
+                }
             }
         }
         for d in &self.distributions {
