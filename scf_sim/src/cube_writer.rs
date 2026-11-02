@@ -405,9 +405,10 @@ pub fn dump(
         0
     };
     let orbitals = if num_orbitals > 0 {
-        timed(format!("evaluating {num_orbitals} orbitals on the grid"), || {
-            Ok(evaluate_orbitals(&grid, basis, c, num_orbitals))
-        })?
+        timed(
+            format!("evaluating {num_orbitals} orbitals on the grid"),
+            || Ok(evaluate_orbitals(&grid, basis, c, num_orbitals)),
+        )?
     } else {
         Vec::new()
     };

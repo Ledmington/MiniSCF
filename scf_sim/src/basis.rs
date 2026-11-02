@@ -201,7 +201,6 @@ impl BasisSet {
 
         eri
     }
-
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -858,6 +857,51 @@ mod tests {
                     (actual - expected).abs() < 1e-10,
                     "Expected nuclear attraction of {:?} to be {expected} but was {actual} (seed: {seed}).",
                     bf.angular_momentum
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_basis_evaluator_matches_compute() {
+        let mut rng = ChaCha8Rng::seed_from_u64(7);
+        let mut functions = Vec::new();
+        for angular in [
+            AngularMomentum::S,
+            AngularMomentum::P,
+            AngularMomentum::D,
+            AngularMomentum::F,
+        ] {
+            let center = random_center(&mut rng);
+            let shell = Arc::new(Shell {
+                center,
+                primitives: vec![
+                    PrimitiveGaussian::new(0.4, 1.3, center),
+                    PrimitiveGaussian::new(0.7, 0.35, center),
+                ],
+            });
+            functions.extend(
+                angular
+                    .cartesian_components()
+                    .into_iter()
+                    .map(|angular_momentum| BasisFunction {
+                        shell: Arc::clone(&shell),
+                        angular_momentum,
+                    }),
+            );
+        }
+
+        let evaluator = BasisEvaluator::new(&functions);
+        let mut values = vec![0.0; functions.len()];
+        for _ in 0..20 {
+            let r = random_center(&mut rng);
+            evaluator.evaluate(&r, &mut values);
+            for (f, actual) in functions.iter().zip(&values) {
+                let expected = f.compute(&r);
+                assert!(
+                    (actual - expected).abs() <= 1e-12 * expected.abs().max(1.0),
+                    "{:?} at {r:?}: expected {expected} but was {actual}.",
+                    f.angular_momentum
                 );
             }
         }
