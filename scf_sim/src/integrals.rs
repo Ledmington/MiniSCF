@@ -468,6 +468,7 @@ struct HermiteDistribution {
 /// point-independent work (Hermite expansions, normalization, density weights) done once.
 pub(crate) struct CoulombPotentialEvaluator {
     distributions: Vec<HermiteDistribution>,
+    boys_table: BoysTable,
     boys: Vec<f64>,
     r: Vec<f64>,
 }
@@ -590,6 +591,7 @@ impl CoulombPotentialEvaluator {
         let max_l = distributions.iter().map(|d| d.max_l).max().unwrap_or(0);
         Self {
             distributions,
+            boys_table: BoysTable::new(max_l),
             boys: vec![0.0; max_l + 1],
             r: vec![0.0; (max_l + 1).pow(4)],
         }
@@ -602,7 +604,7 @@ impl CoulombPotentialEvaluator {
             let pc = d.center.sub(point);
             let t = d.exponent * pc.norm_squared();
             if d.max_l == 0 {
-                boys_all(0, t, &mut self.boys);
+                self.boys_table.fill(0, t, &mut self.boys);
                 sum += d.terms[0].1 * self.boys[0];
                 continue;
             }
@@ -611,6 +613,7 @@ impl CoulombPotentialEvaluator {
                 d.exponent,
                 t,
                 [pc.x, pc.y, pc.z],
+                &self.boys_table,
                 &mut self.boys,
                 &mut self.r,
             );
@@ -625,8 +628,16 @@ impl CoulombPotentialEvaluator {
 /// Fills `r` with the Hermite Coulomb integrals `R^n_tuv(alpha, pc)` for every
 /// `n + t + u + v <= l`, stored at `((n * dim + t) * dim + u) * dim + v` with `dim = l + 1`
 /// (so the `n = 0` ones come first, at `(t * dim + u) * dim + v`).
-fn hermite_coulomb(l: usize, alpha: f64, t: f64, pc: [f64; 3], boys: &mut [f64], r: &mut [f64]) {
-    boys_all(l, t, boys);
+fn hermite_coulomb(
+    l: usize,
+    alpha: f64,
+    t: f64,
+    pc: [f64; 3],
+    boys_table: &BoysTable,
+    boys: &mut [f64],
+    r: &mut [f64],
+) {
+    boys_table.fill(l, t, boys);
     let dim = l + 1;
     let block = dim * dim * dim;
     let mut factor = 1.0;
@@ -702,6 +713,58 @@ fn boys_all(n_max: usize, t: f64, out: &mut [f64]) {
     }
 }
 
+/// Spacing of the tabulated arguments of `BoysTable`.
+const BOYS_TABLE_STEP: f64 = 0.1;
+
+/// Number of Taylor terms used by `BoysTable`.
+const BOYS_TABLE_TERMS: usize = 8;
+
+/// The Boys functions `F_0..=F_n_max`, tabulated below `BOYS_ASYMPTOTIC_THRESHOLD` and
+/// interpolated with a Taylor expansion, since `d/dt F_n = -F_(n+1)`:
+/// `F_n(t0 + d) = sum_k F_(n+k)(t0) (-d)^k / k!`. With `|d| <= step / 2 = 0.05` and
+/// `K = 8` terms, the truncation error is at most
+/// `F_n(t) * e^|d| * |d|^K / K! < 1e-15 * F_n(t)` (because `F_(n+K) <= F_n` and
+/// `|d/dt ln F_n| <= 1`), so this is as accurate as the power series, only much faster.
+pub(crate) struct BoysTable {
+    n_max: usize,
+    /// `F_0..F_(n_max + K - 1)` at every tabulated argument, row by row.
+    values: Vec<f64>,
+}
+
+impl BoysTable {
+    pub(crate) fn new(n_max: usize) -> Self {
+        let width = n_max + BOYS_TABLE_TERMS;
+        let points = (BOYS_ASYMPTOTIC_THRESHOLD / BOYS_TABLE_STEP).round() as usize + 1;
+        let mut values = vec![0.0; points * width];
+        for (i, row) in values.chunks_exact_mut(width).enumerate() {
+            boys_all(width - 1, i as f64 * BOYS_TABLE_STEP, row);
+        }
+        Self { n_max, values }
+    }
+
+    /// Fills `out[0..=n_max]` with `F_0(t), ..., F_n_max(t)`, for `n_max` up to the one the
+    /// table was built for.
+    pub(crate) fn fill(&self, n_max: usize, t: f64, out: &mut [f64]) {
+        debug_assert!(n_max <= self.n_max);
+        if t >= BOYS_ASYMPTOTIC_THRESHOLD {
+            boys_all(n_max, t, out);
+            return;
+        }
+        let i = (t / BOYS_TABLE_STEP).round() as usize;
+        let minus_d = i as f64 * BOYS_TABLE_STEP - t;
+        let width = self.n_max + BOYS_TABLE_TERMS;
+        let row = &self.values[i * width..(i + 1) * width];
+        for (n, f) in out.iter_mut().enumerate().take(n_max + 1) {
+            // Horner's scheme on sum_k F_(n+k) (-d)^k / k!.
+            let mut sum = row[n + BOYS_TABLE_TERMS - 1];
+            for k in (0..BOYS_TABLE_TERMS - 1).rev() {
+                sum = row[n + k] + sum * minus_d / (k + 1) as f64;
+            }
+            *f = sum;
+        }
+    }
+}
+
 /// Above this argument, `erf(sqrt(t))` equals 1 to double precision, so `F_0` has a closed
 /// form and the upward recursion is numerically stable.
 const BOYS_ASYMPTOTIC_THRESHOLD: f64 = 40.0;
@@ -773,6 +836,26 @@ mod tests {
             ((actual - expected) / expected).abs() < 1e-11,
             "F_{n}({t}): expected {expected} but was {actual}."
         );
+    }
+
+    #[rstest]
+    fn test_boys_table_matches_series(
+        #[values(0, 1, 3, 6, 12)] n_max: usize,
+        #[values(
+            0.0, 1e-9, 0.049, 0.05, 0.3, 2.0, 15.0, 15.04, 39.96, 39.99, 40.0, 75.0
+        )]
+        t: f64,
+    ) {
+        let table = BoysTable::new(12);
+        let mut all = vec![0.0; n_max + 1];
+        table.fill(n_max, t, &mut all);
+        for (n, actual) in all.iter().enumerate() {
+            let expected = boys(n, t);
+            assert!(
+                ((actual - expected) / expected).abs() < 1e-14,
+                "F_{n}({t}): expected {expected} but was {actual}."
+            );
+        }
     }
 
     #[rstest]
