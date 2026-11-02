@@ -19,6 +19,14 @@ pub fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
 
     let text = fs::read_to_string(path).map_err(|e| format!("failed to open file: {e}"))?;
 
+    let ecp = ecp_elements(&text);
+    if !ecp.is_empty() {
+        return Err(format!(
+            "it uses effective core potentials (ECP) for {}, which are not supported: use an all-electron basis set",
+            ecp.join(", ")
+        ));
+    }
+
     let result = parse_nwchem_basis_text(&text);
 
     {
@@ -86,6 +94,24 @@ impl PendingBlock {
         let element = element::from_symbol(self.symbol);
         library.entry(element).or_default().extend(self.shells);
     }
+}
+
+/// Symbols of the elements with an effective core potential, from the `<symbol> nelec <n>`
+/// lines of the `ECP` blocks that NWChem-format files put after the basis set. Ignoring
+/// them would silently drop the core electrons' potential.
+fn ecp_elements(text: &str) -> Vec<&str> {
+    let mut in_ecp = false;
+    let mut elements = Vec::new();
+    for line in text.lines() {
+        let fields: Vec<_> = line.split_whitespace().collect();
+        match fields.as_slice() {
+            ["ECP", ..] => in_ecp = true,
+            ["END"] => in_ecp = false,
+            [symbol, "nelec", _] if in_ecp => elements.push(*symbol),
+            _ => {}
+        }
+    }
+    elements
 }
 
 fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
@@ -252,6 +278,28 @@ mod tests {
     use crate::basis::BasisFunction;
 
     use super::*;
+
+    #[test]
+    fn ecp_blocks_are_detected() {
+        // Trimmed down from def2-SVP for HI, as downloaded from the Basis Set Exchange.
+        let text = "BASIS \"ao basis\" SPHERICAL PRINT
+H    S
+     13.0107010              0.19682158E-01
+I    S
+   5899.5791533              0.24734441E-03
+END
+
+ECP
+I nelec 28
+I ul
+2      1.0000000              0.0000000
+I S
+2     40.0333037             49.9600000
+END
+";
+        assert_eq!(vec!["I"], ecp_elements(text));
+        assert!(ecp_elements("BASIS \"ao basis\" PRINT\nH    S\n 1.0 1.0\nEND\n").is_empty());
+    }
 
     #[test]
     fn sto_3g_hydrogen() {

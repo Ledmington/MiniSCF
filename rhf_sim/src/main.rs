@@ -189,10 +189,10 @@ fn main() -> std::io::Result<()> {
     check_input_file(&args.basis_file, "basis set file");
 
     let input_file = read_xyz(&args.input_xyz).unwrap_or_else(|err| {
-        panic!(
-            "Could not read input file '{}' because:\n{}.",
-            args.input_xyz, err
-        )
+        fail(&format!(
+            "Could not read input file '{}': {err}.",
+            args.input_xyz
+        ))
     });
     let atoms = atoms_in_bohr(&input_file.atoms, args.units);
 
@@ -210,10 +210,10 @@ fn main() -> std::io::Result<()> {
     log::info!(" ### Input system ### ");
 
     let basis_library = parse_nwchem_basis(&args.basis_file).unwrap_or_else(|err| {
-        panic!(
-            "Could not read input file '{}' because:\n{}.",
-            args.basis_file, err
-        )
+        fail(&format!(
+            "Could not read basis set file '{}': {err}.",
+            args.basis_file
+        ))
     });
 
     let basis = build_basis(&atoms, &basis_library);
