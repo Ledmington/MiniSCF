@@ -1006,8 +1006,8 @@ fn hermite_coulomb_impl(
     if t.iter().all(|&t_k| t_k >= exp_free_boys_threshold(l)) {
         // Far from the whole batch: R^n_000 = (-2 alpha)^n F_n(t) with the closed form
         // F_0 = sqrt(pi / t) / 2, F_n = F_(n-1) (2n - 1) / (2t), as in `BoysTable::fill`.
-        for k in 0..POTENTIAL_BATCH {
-            r[0][k] = 0.5 * (PI / t[k]).sqrt();
+        for (r_k, &t_k) in r[0].iter_mut().zip(&t) {
+            *r_k = 0.5 * (PI / t_k).sqrt();
         }
         for n in 1..=l {
             let factor = -alpha * (2 * n - 1) as f64;
@@ -1018,8 +1018,8 @@ fn hermite_coulomb_impl(
             }
         }
     } else {
-        for k in 0..POTENTIAL_BATCH {
-            boys_table.fill(l, t[k], boys);
+        for (k, &t_k) in t.iter().enumerate() {
+            boys_table.fill(l, t_k, boys);
             let mut factor = 1.0;
             for (n, f) in boys.iter().enumerate().take(l + 1) {
                 r[n * block][k] = factor * f;
@@ -1074,7 +1074,7 @@ fn hermite_coulomb_impl(
 /// Fills `out[0..=n_max]` with `F_0(t), ..., F_n_max(t)`: the highest order from the power
 /// series (or the closed form for large `t`) and the others by the downward recursion
 /// `F_m = (2t F_(m+1) + exp(-t)) / (2m + 1)`, which is stable.
-fn boys_all(n_max: usize, t: f64, out: &mut [f64]) {
+pub(crate) fn boys_all(n_max: usize, t: f64, out: &mut [f64]) {
     if t >= BOYS_ASYMPTOTIC_THRESHOLD {
         let exp_t = (-t).exp();
         let mut f = 0.5 * (PI / t).sqrt();

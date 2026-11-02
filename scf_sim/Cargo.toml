@@ -3,6 +3,11 @@ name = "scf_sim"
 version = "0.1.0"
 edition = "2024"
 
+[lib]
+# Only the criterion benchmarks in benches/: the default libtest harness would reject
+# criterion's command-line options.
+bench = false
+
 [dependencies]
 element = { path = "../element" }
 scf_core = { path = "../scf_core" }
@@ -12,8 +17,21 @@ log = "0.4.33"
 simple_logger = "5.2.0"
 
 [dev-dependencies]
+criterion = "0.8.2"
 rand = { version = "0.10.1", features = ["chacha"] }
 rstest = "0.26.1"
+
+[[bench]]
+name = "integrals"
+harness = false
+
+[[bench]]
+name = "scf"
+harness = false
+
+[[bench]]
+name = "grid"
+harness = false
 
 [lints]
 workspace = true

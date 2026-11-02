@@ -114,7 +114,7 @@ fn ecp_elements(text: &str) -> Vec<&str> {
     elements
 }
 
-fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
+pub(crate) fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
     let mut library: HashMap<Element, Vec<ShellTemplate>> = HashMap::new();
 
     let mut current_block: Option<PendingBlock> = None;

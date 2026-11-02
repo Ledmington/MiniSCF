@@ -51,7 +51,7 @@ pub fn density_matrix(c: &Array2<f64>, n_occ: usize) -> Array2<f64> {
     p
 }
 
-fn compute_two_electron_contribution(p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
+pub(crate) fn compute_two_electron_contribution(p: &Array2<f64>, eri: &Array4<f64>) -> Array2<f64> {
     let n = p.dim().0;
     let mut g = Array2::<f64>::zeros((n, n));
     for mu in 0..n {

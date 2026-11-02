@@ -170,7 +170,7 @@ impl BasisSet {
 }
 
 #[derive(Clone, PartialEq, Debug)]
-pub(crate) enum AngularMomentum {
+pub enum AngularMomentum {
     S,
     P,
     D,

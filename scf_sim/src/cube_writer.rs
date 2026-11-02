@@ -1,7 +1,7 @@
 use crate::basis::{BasisEvaluator, BasisSet};
 use crate::integrals::{CoulombPotentialEvaluator, POTENTIAL_BATCH};
 use crate::sim::density_matrix;
-use ndarray::{Array2, s};
+use ndarray::{Array2, Axis, Slice};
 use scf_core::Atom;
 use scf_core::point::Point;
 use std::fs::File;
@@ -35,14 +35,14 @@ impl std::str::FromStr for CubeFormat {
 }
 
 #[derive(Clone)]
-struct Grid {
-    origin: Point,
-    nx: usize,
-    ny: usize,
-    nz: usize,
-    dx: f64,
-    dy: f64,
-    dz: f64,
+pub(crate) struct Grid {
+    pub(crate) origin: Point,
+    pub(crate) nx: usize,
+    pub(crate) ny: usize,
+    pub(crate) nz: usize,
+    pub(crate) dx: f64,
+    pub(crate) dy: f64,
+    pub(crate) dz: f64,
 }
 
 struct CubeWriter {
@@ -213,14 +213,14 @@ impl ValueFormatter {
 /// point of `grid`, one vector per orbital in cube order. The basis functions are
 /// evaluated once per point, then turned into orbitals one x-slab at a time with a single
 /// matrix product.
-fn evaluate_orbitals(
+pub(crate) fn evaluate_orbitals(
     grid: &Grid,
     basis: &BasisSet,
     c: &Array2<f64>,
     num_orbitals: usize,
 ) -> Vec<Vec<f64>> {
     let evaluator = BasisEvaluator::new(&basis.functions);
-    let coefficients = c.slice(s![.., ..num_orbitals]);
+    let coefficients = c.slice_axis(Axis(1), Slice::from(..num_orbitals));
     let axis = |origin: f64, n: usize, step: f64| -> Vec<f64> {
         (0..n).map(|i| origin + (i as f64) * step).collect()
     };
@@ -259,7 +259,7 @@ const MIN_NUCLEAR_DISTANCE: f64 = 1e-3;
 /// The molecular electrostatic potential at `r`: the potential a unit positive test charge
 /// would feel, i.e. the nuclear contribution sum_A Z_A/|r-R_A| minus the electronic
 /// contribution sum_{mu,nu} P[mu,nu] * (mu nu | 1/|r-r'|).
-fn evaluate_electrostatic_potential(
+pub(crate) fn evaluate_electrostatic_potential(
     grid: &Grid,
     basis: &BasisSet,
     atoms: &[Atom],
@@ -297,7 +297,7 @@ fn evaluate_electrostatic_potential(
     values
 }
 
-fn compute_grid(atoms: &[Atom]) -> Grid {
+pub(crate) fn compute_grid(atoms: &[Atom]) -> Grid {
     let beginning = Instant::now();
 
     log::info!("Pre-computing the orbital grid");

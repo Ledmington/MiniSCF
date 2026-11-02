@@ -1,3 +1,5 @@
+#![forbid(unsafe_code)]
+
 use anyhow::{Result, anyhow};
 use clap::Parser;
 use std::fs::File;
