@@ -1451,7 +1451,9 @@ name = "rhf_sim"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "element",
  "log",
+ "scf_core",
  "scf_sim",
  "simple_logger",
  "xyz",

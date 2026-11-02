@@ -6,11 +6,13 @@ edition = "2024"
 [dependencies]
 scf_sim = { path = "../scf_sim" }
 xyz = { path = "../xyz" }
+scf_core = { path = "../scf_core" }
 clap = { version = "4.6.1", features = ["derive"] }
 log = "0.4.33"
 simple_logger = "5.2.0"
 
 [dev-dependencies]
+element = { path = "../element" }
 
 [lints]
 workspace = true

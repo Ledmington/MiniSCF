@@ -36,4 +36,26 @@ impl Point {
     pub fn coordinates(&self) -> [f64; 3] {
         [self.x, self.y, self.z]
     }
+
+    /// The point with all coordinates multiplied by `factor`.
+    pub fn scale(&self, factor: f64) -> Point {
+        Point {
+            x: self.x * factor,
+            y: self.y * factor,
+            z: self.z * factor,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn scale() {
+        assert_eq!(
+            Point::new(1.0, -2.0, 0.5).scale(2.0),
+            Point::new(2.0, -4.0, 1.0)
+        );
+    }
 }

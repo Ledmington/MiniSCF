@@ -1,6 +1,7 @@
 #![forbid(unsafe_code)]
 
 pub mod point;
+pub mod units;
 
 use element::Element;
 
