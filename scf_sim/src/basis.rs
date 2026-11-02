@@ -335,8 +335,11 @@ impl BasisEvaluator {
                         let mut row = phi.row_mut(iy * nz + iz);
                         for (c, ((lx, ly, lz), coefficients)) in shell.components.iter().enumerate()
                         {
-                            let value: f64 =
-                                coefficients.iter().zip(&radial).map(|(c, r)| c * r).sum();
+                            let value: f64 = coefficients
+                                .iter()
+                                .zip(&radial)
+                                .map(|(coefficient, r)| coefficient * r)
+                                .sum();
                             let angular = px[*lx as usize * nx + ix]
                                 * py[*ly as usize * ny + iy]
                                 * pz[*lz as usize * nz + iz];
