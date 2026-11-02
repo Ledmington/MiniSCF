@@ -1000,13 +1000,31 @@ fn hermite_coulomb_impl(
 ) {
     let dim = l + 1;
     let block = dim * dim * dim;
-    for k in 0..POTENTIAL_BATCH {
-        let t = alpha * (pc[0][k] * pc[0][k] + pc[1][k] * pc[1][k] + pc[2][k] * pc[2][k]);
-        boys_table.fill(l, t, boys);
-        let mut factor = 1.0;
-        for (n, f) in boys.iter().enumerate().take(l + 1) {
-            r[n * block][k] = factor * f;
-            factor *= -2.0 * alpha;
+    let t: Lanes = std::array::from_fn(|k| {
+        alpha * (pc[0][k] * pc[0][k] + pc[1][k] * pc[1][k] + pc[2][k] * pc[2][k])
+    });
+    if t.iter().all(|&t_k| t_k >= exp_free_boys_threshold(l)) {
+        // Far from the whole batch: R^n_000 = (-2 alpha)^n F_n(t) with the closed form
+        // F_0 = sqrt(pi / t) / 2, F_n = F_(n-1) (2n - 1) / (2t), as in `BoysTable::fill`.
+        for k in 0..POTENTIAL_BATCH {
+            r[0][k] = 0.5 * (PI / t[k]).sqrt();
+        }
+        for n in 1..=l {
+            let factor = -alpha * (2 * n - 1) as f64;
+            let (lower, upper) = r.split_at_mut(n * block);
+            let previous = &lower[(n - 1) * block];
+            for k in 0..POTENTIAL_BATCH {
+                upper[0][k] = previous[k] * factor / t[k];
+            }
+        }
+    } else {
+        for k in 0..POTENTIAL_BATCH {
+            boys_table.fill(l, t[k], boys);
+            let mut factor = 1.0;
+            for (n, f) in boys.iter().enumerate().take(l + 1) {
+                r[n * block][k] = factor * f;
+                factor *= -2.0 * alpha;
+            }
         }
     }
     for n in (0..l).rev() {
@@ -1084,6 +1102,13 @@ fn boys_all(n_max: usize, t: f64, out: &mut [f64]) {
     }
 }
 
+/// Above this argument, `F_0..=F_n_max` follow from `F_0(t) = sqrt(pi / t) / 2` by the
+/// upward recursion without the `exp(-t)` terms, which are negligible there (see
+/// `BoysTable::fill`).
+fn exp_free_boys_threshold(n_max: usize) -> f64 {
+    BOYS_ASYMPTOTIC_THRESHOLD + 3.0 * n_max as f64
+}
+
 /// Spacing of the tabulated arguments of `BoysTable`.
 const BOYS_TABLE_STEP: f64 = 0.1;
 
@@ -1152,7 +1177,7 @@ impl BoysTable {
     /// table was built for.
     pub(crate) fn fill(&self, n_max: usize, t: f64, out: &mut [f64]) {
         debug_assert!(n_max <= self.n_max);
-        if t >= BOYS_ASYMPTOTIC_THRESHOLD + 3.0 * n_max as f64 {
+        if t >= exp_free_boys_threshold(n_max) {
             // F_n(t) = Gamma(n + 1/2) / (2 t^(n + 1/2)) - Gamma(n + 1/2, t) / (2 t^(n + 1/2)),
             // and the incomplete gamma tail is below exp(-t) t^(n - 1/2) / Gamma(n + 1/2)
             // relative to F_n, i.e. < 1e-17 for t >= 40 + 3n: drop it (and exp(-t)).
