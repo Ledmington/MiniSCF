@@ -60,15 +60,15 @@ struct Args {
     max_iterations: usize,
 
     /// Tolerance value for the SCF energy (Hartree)
-    #[arg(long, default_value_t = 1.0e-10)]
+    #[arg(long, default_value = "1e-10")]
     e_tol: f64,
 
     /// Tolerance value for the SCF density
-    #[arg(long, default_value_t = 1.0e-8)]
+    #[arg(long, default_value = "1e-8")]
     p_tol: f64,
 
     /// Minimum residual to reach
-    #[arg(long, default_value_t = 1.0e-15)]
+    #[arg(long, default_value = "1e-15")]
     min_residual: f64,
 }
 
@@ -300,6 +300,14 @@ mod tests {
         let custom = Args::try_parse_from(["rhf_sim", "-o", "mysim"]).unwrap();
         assert_eq!(custom.output_prefix, "mysim");
         assert!(Args::try_parse_from(["rhf_sim", "--output-prefix", ""]).is_err());
+    }
+
+    #[test]
+    fn tolerance_defaults_parse_from_scientific_notation() {
+        let args = Args::try_parse_from(["rhf_sim"]).unwrap();
+        assert_eq!(args.e_tol, 1.0e-10);
+        assert_eq!(args.p_tol, 1.0e-8);
+        assert_eq!(args.min_residual, 1.0e-15);
     }
 
     #[test]
