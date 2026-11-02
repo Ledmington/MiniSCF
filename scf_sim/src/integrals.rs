@@ -467,6 +467,9 @@ struct HermiteDistribution {
 /// Evaluates `sum_(mu,nu) P[mu,nu] (mu nu | 1/|r - C|)` at arbitrary points C, with all the
 /// point-independent work (Hermite expansions, normalization, density weights) done once.
 pub(crate) struct CoulombPotentialEvaluator {
+    /// The spherical (`max_l == 0`) distributions as `(exponent, center, coefficient)`,
+    /// evaluated by a dedicated fast path.
+    spherical: Vec<(f64, Point, f64)>,
     distributions: Vec<HermiteDistribution>,
     boys_table: BoysTable,
     boys: Vec<f64>,
@@ -588,8 +591,15 @@ impl CoulombPotentialEvaluator {
             })
             .collect();
 
+        let (spherical, distributions): (Vec<_>, Vec<_>) =
+            distributions.into_iter().partition(|d| d.max_l == 0);
+        let spherical = spherical
+            .into_iter()
+            .map(|d| (d.exponent, d.center, d.terms[0].1))
+            .collect();
         let max_l = distributions.iter().map(|d| d.max_l).max().unwrap_or(0);
         Self {
+            spherical,
             distributions,
             boys_table: BoysTable::new(max_l),
             boys: vec![0.0; max_l + 1],
@@ -600,14 +610,13 @@ impl CoulombPotentialEvaluator {
     /// The (positive) electronic Coulomb potential at `point`.
     pub(crate) fn evaluate(&mut self, point: &Point) -> f64 {
         let mut sum = 0.0;
+        for (exponent, center, c) in &self.spherical {
+            let t = exponent * center.sub(point).norm_squared();
+            sum += c * self.boys_table.f0(t);
+        }
         for d in &self.distributions {
             let pc = d.center.sub(point);
             let t = d.exponent * pc.norm_squared();
-            if d.max_l == 0 {
-                self.boys_table.fill(0, t, &mut self.boys);
-                sum += d.terms[0].1 * self.boys[0];
-                continue;
-            }
             hermite_coulomb(
                 d.max_l,
                 d.exponent,
@@ -727,19 +736,48 @@ const BOYS_TABLE_TERMS: usize = 8;
 /// `|d/dt ln F_n| <= 1`), so this is as accurate as the power series, only much faster.
 pub(crate) struct BoysTable {
     n_max: usize,
-    /// `F_0..F_(n_max + K - 1)` at every tabulated argument, row by row.
-    values: Vec<f64>,
+    /// `F_(n+k)(t0) / k!` for `n` in `0..=n_max` and `k` in `0..K`, at every tabulated
+    /// argument `t0`, row by row.
+    coefficients: Vec<f64>,
 }
 
 impl BoysTable {
     pub(crate) fn new(n_max: usize) -> Self {
         let width = n_max + BOYS_TABLE_TERMS;
         let points = (BOYS_ASYMPTOTIC_THRESHOLD / BOYS_TABLE_STEP).round() as usize + 1;
-        let mut values = vec![0.0; points * width];
-        for (i, row) in values.chunks_exact_mut(width).enumerate() {
-            boys_all(width - 1, i as f64 * BOYS_TABLE_STEP, row);
+        let mut boys = vec![0.0; width];
+        let mut coefficients = Vec::with_capacity(points * (n_max + 1) * BOYS_TABLE_TERMS);
+        for i in 0..points {
+            boys_all(width - 1, i as f64 * BOYS_TABLE_STEP, &mut boys);
+            for n in 0..=n_max {
+                let mut factorial = 1.0;
+                for k in 0..BOYS_TABLE_TERMS {
+                    if k > 0 {
+                        factorial *= k as f64;
+                    }
+                    coefficients.push(boys[n + k] / factorial);
+                }
+            }
         }
-        Self { n_max, values }
+        Self {
+            n_max,
+            coefficients,
+        }
+    }
+
+    /// `F_0(t)`. Above `BOYS_ASYMPTOTIC_THRESHOLD` it is exactly `sqrt(pi / t) / 2` in double
+    /// precision.
+    pub(crate) fn f0(&self, t: f64) -> f64 {
+        if t >= BOYS_ASYMPTOTIC_THRESHOLD {
+            return 0.5 * (PI / t).sqrt();
+        }
+        let i = (t / BOYS_TABLE_STEP).round() as usize;
+        let minus_d = i as f64 * BOYS_TABLE_STEP - t;
+        let row_len = (self.n_max + 1) * BOYS_TABLE_TERMS;
+        self.coefficients[i * row_len..][..BOYS_TABLE_TERMS]
+            .iter()
+            .rev()
+            .fold(0.0, |sum, c_k| c_k + sum * minus_d)
     }
 
     /// Fills `out[0..=n_max]` with `F_0(t), ..., F_n_max(t)`, for `n_max` up to the one the
@@ -752,15 +790,11 @@ impl BoysTable {
         }
         let i = (t / BOYS_TABLE_STEP).round() as usize;
         let minus_d = i as f64 * BOYS_TABLE_STEP - t;
-        let width = self.n_max + BOYS_TABLE_TERMS;
-        let row = &self.values[i * width..(i + 1) * width];
-        for (n, f) in out.iter_mut().enumerate().take(n_max + 1) {
-            // Horner's scheme on sum_k F_(n+k) (-d)^k / k!.
-            let mut sum = row[n + BOYS_TABLE_TERMS - 1];
-            for k in (0..BOYS_TABLE_TERMS - 1).rev() {
-                sum = row[n + k] + sum * minus_d / (k + 1) as f64;
-            }
-            *f = sum;
+        let row_len = (self.n_max + 1) * BOYS_TABLE_TERMS;
+        let row = &self.coefficients[i * row_len..][..(n_max + 1) * BOYS_TABLE_TERMS];
+        for (f, c) in out.iter_mut().zip(row.chunks_exact(BOYS_TABLE_TERMS)) {
+            // Horner's scheme on sum_k F_(n+k)(t0) / k! * (-d)^k.
+            *f = c.iter().rev().fold(0.0, |sum, c_k| c_k + sum * minus_d);
         }
     }
 }
@@ -849,6 +883,7 @@ mod tests {
         let table = BoysTable::new(12);
         let mut all = vec![0.0; n_max + 1];
         table.fill(n_max, t, &mut all);
+        assert_eq!(all[0], table.f0(t), "F_0({t})");
         for (n, actual) in all.iter().enumerate() {
             let expected = boys(n, t);
             assert!(
