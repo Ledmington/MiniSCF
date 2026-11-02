@@ -225,27 +225,20 @@ fn evaluate_orbitals(
 ) -> Vec<Vec<f64>> {
     let evaluator = BasisEvaluator::new(&basis.functions);
     let coefficients = c.slice(s![.., ..num_orbitals]);
-    let slab_len = grid.ny * grid.nz;
-    let mut orbitals = vec![Vec::with_capacity(grid.nx * slab_len); num_orbitals];
-    let mut phi = Array2::zeros((slab_len, basis.functions.len()));
+    let axis = |origin: f64, n: usize, step: f64| -> Vec<f64> {
+        (0..n).map(|i| origin + (i as f64) * step).collect()
+    };
+    let xs = axis(grid.origin.x, grid.nx, grid.dx);
+    let ys = axis(grid.origin.y, grid.ny, grid.dy);
+    let zs = axis(grid.origin.z, grid.nz, grid.dz);
+    let mut orbitals = vec![Vec::with_capacity(grid.nx * grid.ny * grid.nz); num_orbitals];
 
-    for ix in 0..grid.nx {
-        for iy in 0..grid.ny {
-            for iz in 0..grid.nz {
-                let r = Point::new(
-                    grid.origin.x + (ix as f64) * grid.dx,
-                    grid.origin.y + (iy as f64) * grid.dy,
-                    grid.origin.z + (iz as f64) * grid.dz,
-                );
-                let mut row = phi.row_mut(iy * grid.nz + iz);
-                evaluator.evaluate(&r, row.as_slice_mut().expect("rows are contiguous"));
-            }
-        }
+    evaluator.evaluate_grid(&xs, &ys, &zs, |_, phi| {
         let psi = phi.dot(&coefficients);
         for (values, column) in orbitals.iter_mut().zip(psi.columns()) {
             values.extend(column.iter());
         }
-    }
+    });
 
     orbitals
 }

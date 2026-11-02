@@ -268,27 +268,85 @@ impl BasisEvaluator {
         }
     }
 
-    /// Writes the value of every basis function at `r` into `values`, in basis order.
-    pub(crate) fn evaluate(&self, r: &Point, values: &mut [f64]) {
-        let mut exponentials = vec![0.0; self.max_primitives];
-        let mut index = 0;
-        for shell in &self.shells {
-            let dx = r.x - shell.center.x;
-            let dy = r.y - shell.center.y;
-            let dz = r.z - shell.center.z;
-            let r2 = dx * dx + dy * dy + dz * dz;
-            for (e, alpha) in exponentials.iter_mut().zip(&shell.alphas) {
-                *e = (-alpha * r2).exp();
-            }
-            for ((lx, ly, lz), coefficients) in &shell.components {
-                let radial: f64 = coefficients
+    /// Evaluates every basis function at every point `(xs[ix], ys[iy], zs[iz])` of a
+    /// rectilinear grid, one x-slab at a time: `slab(ix, phi)` receives the values of slab
+    /// `ix`, the point `(iy, iz)` in row `iy * zs.len() + iz` of `phi` and one column per
+    /// basis function. Gaussians are separable, `exp(-a r^2) = exp(-a dx^2) exp(-a dy^2)
+    /// exp(-a dz^2)`, so the exponentials (and the powers of `dx`, `dy`, `dz`) are computed
+    /// once per grid line instead of once per point.
+    pub(crate) fn evaluate_grid(
+        &self,
+        xs: &[f64],
+        ys: &[f64],
+        zs: &[f64],
+        mut slab: impl FnMut(usize, &Array2<f64>),
+    ) {
+        let axes = [xs, ys, zs];
+        // Per shell and axis: exp(-a d^2) for each primitive and d^l for each power, with
+        // one value per grid coordinate.
+        let factors: Vec<[(Vec<f64>, Vec<f64>); 3]> = self
+            .shells
+            .iter()
+            .map(|shell| {
+                let max_l = shell
+                    .components
                     .iter()
-                    .zip(&exponentials)
-                    .map(|(c, e)| c * e)
-                    .sum();
-                values[index] = radial * dx.powi(*lx) * dy.powi(*ly) * dz.powi(*lz);
-                index += 1;
+                    .map(|((lx, ly, lz), _)| lx + ly + lz)
+                    .max()
+                    .unwrap_or(0);
+                let center = [shell.center.x, shell.center.y, shell.center.z];
+                std::array::from_fn(|axis| {
+                    let coordinates = axes[axis];
+                    let gaussians = shell
+                        .alphas
+                        .iter()
+                        .flat_map(|alpha| {
+                            coordinates.iter().map(move |c| {
+                                let d = c - center[axis];
+                                (-alpha * d * d).exp()
+                            })
+                        })
+                        .collect();
+                    let powers = (0..=max_l)
+                        .flat_map(|l| coordinates.iter().map(move |c| (c - center[axis]).powi(l)))
+                        .collect();
+                    (gaussians, powers)
+                })
+            })
+            .collect();
+
+        let (nx, ny, nz) = (xs.len(), ys.len(), zs.len());
+        let num_functions: usize = self.shells.iter().map(|s| s.components.len()).sum();
+        let mut phi = Array2::zeros((ny * nz, num_functions));
+        let mut gaussians_xy = vec![0.0; self.max_primitives];
+        let mut radial = vec![0.0; self.max_primitives];
+        for ix in 0..nx {
+            for iy in 0..ny {
+                let mut first = 0;
+                for (shell, [(gx, px), (gy, py), (gz, pz)]) in self.shells.iter().zip(&factors) {
+                    let num_primitives = shell.alphas.len();
+                    for (k, g) in gaussians_xy.iter_mut().enumerate().take(num_primitives) {
+                        *g = gx[k * nx + ix] * gy[k * ny + iy];
+                    }
+                    for iz in 0..nz {
+                        for (k, r) in radial.iter_mut().enumerate().take(num_primitives) {
+                            *r = gaussians_xy[k] * gz[k * nz + iz];
+                        }
+                        let mut row = phi.row_mut(iy * nz + iz);
+                        for (c, ((lx, ly, lz), coefficients)) in shell.components.iter().enumerate()
+                        {
+                            let value: f64 =
+                                coefficients.iter().zip(&radial).map(|(c, r)| c * r).sum();
+                            let angular = px[*lx as usize * nx + ix]
+                                * py[*ly as usize * ny + iy]
+                                * pz[*lz as usize * nz + iz];
+                            row[first + c] = value * angular;
+                        }
+                    }
+                    first += shell.components.len();
+                }
             }
+            slab(ix, &phi);
         }
     }
 }
@@ -880,19 +938,27 @@ mod tests {
         }
 
         let evaluator = BasisEvaluator::new(&functions);
-        let mut values = vec![0.0; functions.len()];
-        for _ in 0..20 {
-            let r = random_center(&mut rng);
-            evaluator.evaluate(&r, &mut values);
-            for (f, actual) in functions.iter().zip(&values) {
-                let expected = f.compute(&r);
-                assert!(
-                    (actual - expected).abs() <= 1e-12 * expected.abs().max(1.0),
-                    "{:?} at {r:?}: expected {expected} but was {actual}.",
-                    f.angular_momentum
-                );
+        let xs = [-1.3, 0.2, 0.7];
+        let ys = [-0.4, 0.9];
+        let zs = [-2.0, -0.1, 0.5, 1.6];
+        let mut slabs = 0;
+        evaluator.evaluate_grid(&xs, &ys, &zs, |ix, phi| {
+            slabs += 1;
+            for (iy, y) in ys.iter().enumerate() {
+                for (iz, z) in zs.iter().enumerate() {
+                    let r = Point::new(xs[ix], *y, *z);
+                    for (f, actual) in functions.iter().zip(phi.row(iy * zs.len() + iz)) {
+                        let expected = f.compute(&r);
+                        assert!(
+                            (actual - expected).abs() <= 1e-12 * expected.abs().max(1.0),
+                            "{:?} at {r:?}: expected {expected} but was {actual}.",
+                            f.angular_momentum
+                        );
+                    }
+                }
             }
-        }
+        });
+        assert_eq!(xs.len(), slabs);
     }
 
     #[test]
