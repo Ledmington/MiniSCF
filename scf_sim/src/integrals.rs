@@ -591,8 +591,10 @@ impl CoulombPotentialEvaluator {
             })
             .collect();
 
-        let (spherical_distributions, other_distributions): (Vec<_>, Vec<_>) =
+        let (spherical_distributions, mut other_distributions): (Vec<_>, Vec<_>) =
             distributions.into_iter().partition(|d| d.max_l == 0);
+        // Grouping equal orders keeps the dispatch on `max_l` predictable.
+        other_distributions.sort_by_key(|d| d.max_l);
         let spherical = spherical_distributions
             .into_iter()
             .map(|d| (d.exponent, d.center, d.terms[0].1))
@@ -642,6 +644,41 @@ impl CoulombPotentialEvaluator {
 /// `n + t + u + v <= l`, stored at `((n * dim + t) * dim + u) * dim + v` with `dim = l + 1`
 /// (so the `n = 0` ones come first, at `(t * dim + u) * dim + v`).
 fn hermite_coulomb(
+    l: usize,
+    alpha: f64,
+    t: f64,
+    pc: [f64; 3],
+    boys_table: &BoysTable,
+    boys: &mut [f64],
+    r: &mut [f64],
+) {
+    // Dispatching to a compile-time `l` lets the compiler unroll the recursion.
+    let f = match l {
+        0 => hermite_coulomb_fixed::<0>,
+        1 => hermite_coulomb_fixed::<1>,
+        2 => hermite_coulomb_fixed::<2>,
+        3 => hermite_coulomb_fixed::<3>,
+        4 => hermite_coulomb_fixed::<4>,
+        5 => hermite_coulomb_fixed::<5>,
+        6 => hermite_coulomb_fixed::<6>,
+        _ => return hermite_coulomb_impl(l, alpha, t, pc, boys_table, boys, r),
+    };
+    f(alpha, t, pc, boys_table, boys, r)
+}
+
+fn hermite_coulomb_fixed<const L: usize>(
+    alpha: f64,
+    t: f64,
+    pc: [f64; 3],
+    boys_table: &BoysTable,
+    boys: &mut [f64],
+    r: &mut [f64],
+) {
+    hermite_coulomb_impl(L, alpha, t, pc, boys_table, boys, r)
+}
+
+#[inline(always)]
+fn hermite_coulomb_impl(
     l: usize,
     alpha: f64,
     t: f64,
