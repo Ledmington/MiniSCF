@@ -1,6 +1,6 @@
 #![forbid(unsafe_code)]
 
-use clap::{Parser, ValueEnum};
+use clap::{Parser, ValueEnum, builder::NonEmptyStringValueParser};
 use scf_core::{Atom, units::ANGSTROM_TO_BOHR};
 use scf_sim::{
     basis_reader::{build_basis, parse_nwchem_basis},
@@ -29,8 +29,9 @@ struct Args {
     #[arg(short, long, default_value = "basis.gbs")]
     basis_file: String,
 
-    /// Prefix of the file where to write molecular orbitals
-    #[arg(short, long, default_value = "mo_")]
+    /// Prefix of the output files: writes `<PREFIX>_mo_<N>.cube`, `<PREFIX>_density.cube`
+    /// and `<PREFIX>_esp.cube`
+    #[arg(short, long, default_value = "rhf", value_parser = NonEmptyStringValueParser::new())]
     output_prefix: String,
 
     /// Cube file format(s) to write: orbitals, density, esp. Repeat the flag or
@@ -279,6 +280,15 @@ mod tests {
         );
         assert_eq!(converted[0].element, atoms[0].element);
         assert_eq!(converted[0].charge, atoms[0].charge);
+    }
+
+    #[test]
+    fn output_prefix_defaults_to_rhf_and_rejects_empty() {
+        let args = Args::try_parse_from(["rhf_sim"]).unwrap();
+        assert_eq!(args.output_prefix, "rhf");
+        let custom = Args::try_parse_from(["rhf_sim", "-o", "mysim"]).unwrap();
+        assert_eq!(custom.output_prefix, "mysim");
+        assert!(Args::try_parse_from(["rhf_sim", "--output-prefix", ""]).is_err());
     }
 
     #[test]

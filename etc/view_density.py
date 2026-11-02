@@ -196,15 +196,15 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "--density-cube",
-        default="mo_density.cube",
+        default="rhf_density.cube",
         help="path to the electron-density .cube file, defines the surface geometry "
-        "(default: mo_density.cube)",
+        "(default: rhf_density.cube)",
     )
     parser.add_argument(
         "--esp-cube",
-        default="mo_esp.cube",
+        default="rhf_esp.cube",
         help="path to the electrostatic-potential .cube file, colors the surface "
-        "(default: mo_esp.cube)",
+        "(default: rhf_esp.cube)",
     )
     parser.add_argument(
         "--isovalue",

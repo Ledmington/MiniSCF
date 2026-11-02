@@ -378,7 +378,7 @@ fn dump_all_molecular_orbitals(
 ) -> std::io::Result<()> {
     timed(format!("writing {} orbitals", orbitals.len()), || {
         for (mo_index, values) in orbitals.iter().enumerate() {
-            let filename = orbital_filename(output_filename_prefix, mo_index);
+            let filename = orbital_filename(output_filename_prefix, mo_index, orbitals.len());
             timed(
                 format!("writing orbital {mo_index} to '{filename}'"),
                 || writer.write(&filename, values),
@@ -426,16 +426,23 @@ fn dump_electrostatic_potential(
     )
 }
 
-fn orbital_filename(prefix: &str, mo_index: usize) -> String {
-    format!("{prefix}{mo_index}.cube")
+/// Number of digits of the largest orbital index, so that orbital file names sort
+/// in order (`mo_00` ... `mo_64` for 65 orbitals).
+fn orbital_index_width(num_orbitals: usize) -> usize {
+    num_orbitals.saturating_sub(1).to_string().len()
+}
+
+fn orbital_filename(prefix: &str, mo_index: usize, num_orbitals: usize) -> String {
+    let width = orbital_index_width(num_orbitals);
+    format!("{prefix}_mo_{mo_index:0width$}.cube")
 }
 
 fn density_filename(prefix: &str) -> String {
-    format!("{prefix}density.cube")
+    format!("{prefix}_density.cube")
 }
 
 fn esp_filename(prefix: &str) -> String {
-    format!("{prefix}esp.cube")
+    format!("{prefix}_esp.cube")
 }
 
 /// Names of all the files `dump` would write for the given format(s) and number of
@@ -444,9 +451,8 @@ pub fn output_filenames(formats: &[CubeFormat], prefix: &str, num_orbitals: usiz
     let mut filenames = Vec::new();
     for format in formats {
         match format {
-            CubeFormat::Orbitals => {
-                filenames.extend((0..num_orbitals).map(|i| orbital_filename(prefix, i)))
-            }
+            CubeFormat::Orbitals => filenames
+                .extend((0..num_orbitals).map(|i| orbital_filename(prefix, i, num_orbitals))),
             CubeFormat::Density => filenames.push(density_filename(prefix)),
             CubeFormat::Esp => filenames.push(esp_filename(prefix)),
         }
@@ -564,17 +570,43 @@ mod tests {
     #[test]
     fn output_filenames_match_formats() {
         assert_eq!(
-            vec!["mo_0.cube", "mo_1.cube", "mo_density.cube", "mo_esp.cube"],
+            vec![
+                "mysim_mo_0.cube",
+                "mysim_mo_1.cube",
+                "mysim_density.cube",
+                "mysim_esp.cube"
+            ],
             output_filenames(
                 &[CubeFormat::Orbitals, CubeFormat::Density, CubeFormat::Esp],
-                "mo_",
+                "mysim",
                 2
             )
         );
         assert_eq!(
-            vec!["out/esp.cube"],
-            output_filenames(&[CubeFormat::Esp], "out/", 7)
+            vec!["out/rhf_esp.cube"],
+            output_filenames(&[CubeFormat::Esp], "out/rhf", 7)
         );
-        assert!(output_filenames(&[], "mo_", 3).is_empty());
+        assert!(output_filenames(&[], "rhf", 3).is_empty());
+    }
+
+    #[test]
+    fn orbital_filenames_are_padded_to_the_largest_index() {
+        let names = output_filenames(&[CubeFormat::Orbitals], "rhf", 65);
+        assert_eq!("rhf_mo_00.cube", names[0]);
+        assert_eq!("rhf_mo_09.cube", names[9]);
+        assert_eq!("rhf_mo_64.cube", names[64]);
+        assert_eq!(
+            vec!["rhf_mo_0.cube"],
+            output_filenames(&[CubeFormat::Orbitals], "rhf", 1)
+        );
+        assert_eq!(
+            "rhf_mo_099.cube",
+            output_filenames(&[CubeFormat::Orbitals], "rhf", 101)[99]
+        );
+        // Exactly 10 orbitals still fit in one digit (0..=9).
+        assert_eq!(
+            "rhf_mo_9.cube",
+            output_filenames(&[CubeFormat::Orbitals], "rhf", 10)[9]
+        );
     }
 }
