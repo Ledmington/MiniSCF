@@ -172,40 +172,36 @@ impl ValueFormatter {
             // `scaled` is within a few ulps (~1e-10) of the exact value, so unless it is this
             // close to a rounding tie, it rounds the same way as the exact decimal expansion.
             if (fraction - 0.5).abs() > 1e-6 && (100_000..1_000_000).contains(&rounded) {
-                let mut digits = rounded;
-                let mut text = [0u8; 16];
-                let mut len = 0;
-                if v < 0.0 {
-                    text[len] = b'-';
-                    len += 1;
+                // At most "-d.ddddde-ddd", 13 bytes: fill a right-aligned field backwards.
+                let mut field = [b' '; 13];
+                let mut position = 13;
+                let mut push = |byte: u8| {
+                    position -= 1;
+                    field[position] = byte;
+                };
+                let mut exponent_digits = exponent.unsigned_abs();
+                loop {
+                    push(b'0' + (exponent_digits % 10) as u8);
+                    exponent_digits /= 10;
+                    if exponent_digits == 0 {
+                        break;
+                    }
                 }
-                let mut mantissa = [0u8; 6];
-                for d in mantissa.iter_mut().rev() {
-                    *d = b'0' + (digits % 10) as u8;
+                if exponent < 0 {
+                    push(b'-');
+                }
+                push(b'e');
+                let mut digits = rounded;
+                for _ in 0..5 {
+                    push(b'0' + (digits % 10) as u8);
                     digits /= 10;
                 }
-                text[len] = mantissa[0];
-                text[len + 1] = b'.';
-                text[len + 2..len + 7].copy_from_slice(&mantissa[1..]);
-                text[len + 7] = b'e';
-                len += 8;
-                if exponent < 0 {
-                    text[len] = b'-';
-                    len += 1;
+                push(b'.');
+                push(b'0' + digits as u8);
+                if v < 0.0 {
+                    push(b'-');
                 }
-                let exponent_digits = exponent.unsigned_abs();
-                if exponent_digits >= 100 {
-                    text[len] = b'0' + (exponent_digits / 100) as u8;
-                    len += 1;
-                }
-                if exponent_digits >= 10 {
-                    text[len] = b'0' + (exponent_digits / 10 % 10) as u8;
-                    len += 1;
-                }
-                text[len] = b'0' + (exponent_digits % 10) as u8;
-                len += 1;
-                out.extend(std::iter::repeat_n(b' ', 13usize.saturating_sub(len)));
-                out.extend_from_slice(&text[..len]);
+                out.extend_from_slice(&field);
                 return;
             }
         }
