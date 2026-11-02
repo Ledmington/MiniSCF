@@ -111,20 +111,72 @@ impl CubeWriter {
         // -------------------------
         // 5. Volume data
         // -------------------------
-        let mut count = 0;
-
-        for v in values {
-            write!(f, "{v:13.5e}")?;
-            count += 1;
-
-            if count % 6 == 0 {
-                writeln!(f)?;
+        let mut buffer = Vec::with_capacity(values.len() * 13 + values.len() / 6 + 1);
+        for (count, v) in values.iter().enumerate() {
+            format_value(*v, &mut buffer);
+            if (count + 1) % 6 == 0 {
+                buffer.push(b'\n');
             }
         }
-
-        writeln!(f)?;
-        Ok(())
+        buffer.push(b'\n');
+        f.write_all(&buffer)?;
+        f.flush()
     }
+}
+
+/// Appends `v` formatted exactly as `format!("{v:13.5e}")` to `out`, but much faster: the
+/// six significant digits are computed in floating point, falling back to the standard
+/// formatter whenever the rounding could be ambiguous.
+fn format_value(v: f64, out: &mut Vec<u8>) {
+    let magnitude = v.abs();
+    // Only normal numbers well inside the f64 range take the fast path.
+    if (1e-300..1e300).contains(&magnitude) {
+        let mut exponent = magnitude.log10().floor() as i32;
+        let mut scaled = magnitude * 10f64.powi(5 - exponent);
+        // log10 can be off by one next to powers of ten.
+        if scaled >= 1_000_000.0 {
+            exponent += 1;
+            scaled = magnitude * 10f64.powi(5 - exponent);
+        } else if scaled < 100_000.0 {
+            exponent -= 1;
+            scaled = magnitude * 10f64.powi(5 - exponent);
+        }
+        let rounded = scaled.round();
+        // `scaled` is within a few ulps (~1e-10) of the exact value, so unless it is this
+        // close to a rounding tie, it rounds the same way as the exact decimal expansion.
+        if (scaled - scaled.floor() - 0.5).abs() > 1e-6
+            && (100_000.0..1_000_000.0).contains(&rounded)
+        {
+            let mut digits = rounded as u32;
+            let mut text = [0u8; 16];
+            let mut len = 0;
+            if v < 0.0 {
+                text[len] = b'-';
+                len += 1;
+            }
+            let mut mantissa = [0u8; 6];
+            for d in mantissa.iter_mut().rev() {
+                *d = b'0' + (digits % 10) as u8;
+                digits /= 10;
+            }
+            text[len] = mantissa[0];
+            text[len + 1] = b'.';
+            text[len + 2..len + 7].copy_from_slice(&mantissa[1..]);
+            text[len + 7] = b'e';
+            len += 8;
+            if exponent < 0 {
+                text[len] = b'-';
+                len += 1;
+            }
+            let exponent_text = exponent.unsigned_abs().to_string();
+            text[len..len + exponent_text.len()].copy_from_slice(exponent_text.as_bytes());
+            len += exponent_text.len();
+            out.extend(std::iter::repeat_n(b' ', 13usize.saturating_sub(len)));
+            out.extend_from_slice(&text[..len]);
+            return;
+        }
+    }
+    out.extend_from_slice(format!("{v:13.5e}").as_bytes());
 }
 
 /// The values of the first `num_orbitals` molecular orbitals (columns of `c`) at every
@@ -438,6 +490,52 @@ pub fn dump(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn format_value_matches_standard_formatter() {
+        let mut values = vec![
+            0.0,
+            -0.0,
+            1.0,
+            -1.0,
+            1.000005,
+            1.000015,
+            9.999995,
+            9.9999949,
+            99999.95,
+            1e-5,
+            1e-300,
+            1e-310,
+            1e300,
+            123456.5,
+            0.1,
+            0.3,
+            f64::INFINITY,
+            f64::NAN,
+            f64::MIN_POSITIVE,
+        ];
+        let mut state: u64 = 0x2545_f491_4f6c_dd1d;
+        for _ in 0..200_000 {
+            // xorshift64: arbitrary bit patterns cover every exponent and mantissa.
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            values.push(f64::from_bits(state));
+            values.push(
+                ((state >> 11) as f64 / (1u64 << 53) as f64 - 0.5)
+                    * 10f64.powi((state % 40) as i32 - 20),
+            );
+        }
+        for v in values {
+            let mut actual = Vec::new();
+            format_value(v, &mut actual);
+            assert_eq!(
+                String::from_utf8(actual).unwrap(),
+                format!("{v:13.5e}"),
+                "{v:e}"
+            );
+        }
+    }
 
     #[test]
     fn output_filenames_match_formats() {
