@@ -568,8 +568,8 @@ pub(crate) fn electron_repulsion_tensor(functions: &[BasisFunction]) -> ndarray:
     let mut eri = ndarray::Array4::zeros((n, n, n, n));
     for (index, bra) in pairs.iter().enumerate() {
         for ket in &pairs[..=index] {
-            let l = bra.l + ket.l;
-            let dim = l + 1;
+            let total_l = bra.l + ket.l;
+            let dim = total_l + 1;
             let (bra_dim, ket_dim) = (bra.l + 1, ket.l + 1);
             let (bra_cube, ket_cube) = (bra_dim.pow(3), ket_dim.pow(3));
             values.clear();
@@ -581,8 +581,14 @@ pub(crate) fn electron_repulsion_tensor(functions: &[BasisFunction]) -> ndarray:
                     let (p, q) = (pb.exponent, pk.exponent);
                     let rho = p * q / (p + q);
                     let pq = pb.center.sub(&pk.center);
-                    let pq = [pq.x, pq.y, pq.z];
-                    hermite_coulomb_scalar(l, rho, pq, &boys_table, &mut boys, &mut r);
+                    hermite_coulomb_scalar(
+                        total_l,
+                        rho,
+                        [pq.x, pq.y, pq.z],
+                        &boys_table,
+                        &mut boys,
+                        &mut r,
+                    );
                     let prefactor = 2.0 * PI.powf(2.5) / (p * q * (p + q).sqrt());
 
                     // X_kl(t,u,v) = sum_(tau,nu,phi) (-1)^(tau+nu+phi) E_kl(tau,nu,phi)
@@ -616,7 +622,7 @@ pub(crate) fn electron_repulsion_tensor(functions: &[BasisFunction]) -> ndarray:
                     for (ij, e_ij) in pb.expansions.chunks_exact(bra_cube).enumerate() {
                         let row = &mut values[ij * ket.num_function_pairs()..];
                         for (kl, x) in ket_contracted.chunks_exact(bra_cube).enumerate() {
-                            let dot: f64 = e_ij.iter().zip(x).map(|(e, x)| e * x).sum();
+                            let dot: f64 = e_ij.iter().zip(x).map(|(e, xv)| e * xv).sum();
                             row[kl] += prefactor * dot;
                         }
                     }
