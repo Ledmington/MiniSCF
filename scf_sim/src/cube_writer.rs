@@ -6,7 +6,7 @@ use scf_core::Atom;
 use scf_core::point::Point;
 use std::fs::File;
 use std::io::{BufWriter, Write};
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 /// Which cube file format(s) `dump` should write.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -376,16 +376,31 @@ fn dump_all_molecular_orbitals(
     orbitals: &[Vec<f64>],
     output_filename_prefix: &str,
 ) -> std::io::Result<()> {
-    timed(format!("writing {} orbitals", orbitals.len()), || {
+    let num_orbitals = orbitals.len();
+    timed(format!("writing {num_orbitals} orbitals"), || {
+        let beginning = Instant::now();
         for (mo_index, values) in orbitals.iter().enumerate() {
-            let filename = orbital_filename(output_filename_prefix, mo_index, orbitals.len());
-            timed(
-                format!("writing orbital {mo_index} to '{filename}'"),
-                || writer.write(&filename, values),
-            )?;
+            let filename = orbital_filename(output_filename_prefix, mo_index, num_orbitals);
+            let orbital_beginning = Instant::now();
+            writer.write(&filename, values)?;
+            let done = mo_index + 1;
+            log::info!(
+                "Wrote '{filename}' ({done}/{num_orbitals} orbitals) in {:?}, ETA {:.1?}",
+                orbital_beginning.elapsed(),
+                eta(beginning.elapsed(), done, num_orbitals)
+            );
         }
         Ok(())
     })
+}
+
+/// Estimated time left to finish `total` equally expensive steps, after `done` of them
+/// took `elapsed` overall.
+fn eta(elapsed: Duration, done: usize, total: usize) -> Duration {
+    if done == 0 {
+        return Duration::ZERO;
+    }
+    elapsed.mul_f64(total.saturating_sub(done) as f64 / done as f64)
 }
 
 /// Dumps the total electron density rho(r) = sum over occupied MOs of 2 * psi_i(r)^2
@@ -565,6 +580,14 @@ mod tests {
                 "{v:e}"
             );
         }
+    }
+
+    #[test]
+    fn eta_extrapolates_the_average_step_time() {
+        let elapsed = Duration::from_millis(300);
+        assert_eq!(Duration::from_millis(700), eta(elapsed, 3, 10));
+        assert_eq!(Duration::ZERO, eta(elapsed, 10, 10));
+        assert_eq!(Duration::ZERO, eta(Duration::ZERO, 0, 10));
     }
 
     #[test]
