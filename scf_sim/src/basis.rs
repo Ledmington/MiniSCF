@@ -586,8 +586,7 @@ mod tests {
             }
         }
         let basis = BasisSet { functions };
-        let mut evaluator =
-            integrals::CoulombPotentialEvaluator::new(&basis.functions, &density);
+        let mut evaluator = integrals::CoulombPotentialEvaluator::new(&basis.functions, &density);
 
         for point in [
             Point::new(0.0, 0.0, 0.0),
