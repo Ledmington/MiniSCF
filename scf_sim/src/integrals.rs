@@ -473,8 +473,15 @@ pub(crate) struct CoulombPotentialEvaluator {
     distributions: Vec<HermiteDistribution>,
     boys_table: BoysTable,
     boys: Vec<f64>,
-    r: Vec<f64>,
+    /// The Hermite Coulomb integrals of one distribution at a batch of points.
+    r: Vec<Lanes>,
 }
+
+/// How many points `CoulombPotentialEvaluator::evaluate_batch` evaluates together.
+pub(crate) const POTENTIAL_BATCH: usize = 16;
+
+/// One value per point of a batch.
+type Lanes = [f64; POTENTIAL_BATCH];
 
 impl CoulombPotentialEvaluator {
     pub(crate) fn new(functions: &[BasisFunction], density: &ndarray::Array2<f64>) -> Self {
@@ -609,48 +616,74 @@ impl CoulombPotentialEvaluator {
             distributions: other_distributions,
             boys_table: BoysTable::new(max_l),
             boys: vec![0.0; max_l + 1],
-            r: vec![0.0; (max_l + 1).pow(4)],
+            r: vec![[0.0; POTENTIAL_BATCH]; (max_l + 1).pow(4)],
         }
     }
 
     /// The (positive) electronic Coulomb potential at `point`.
+    #[cfg(test)]
     pub(crate) fn evaluate(&mut self, point: &Point) -> f64 {
-        let mut sum = 0.0;
+        let mut value = [0.0];
+        self.evaluate_batch(&[*point], &mut value);
+        value[0]
+    }
+
+    /// Writes the (positive) electronic Coulomb potential at each of `points` (at most
+    /// `POTENTIAL_BATCH`) into `out`. Points are processed together, so that the work on
+    /// each distribution runs over fixed-size arrays the compiler can vectorize.
+    pub(crate) fn evaluate_batch(&mut self, points: &[Point], out: &mut [f64]) {
+        assert!(!points.is_empty() && points.len() <= POTENTIAL_BATCH);
+        // Unused lanes repeat the last point; their values are discarded.
+        let last = points[points.len() - 1];
+        let lane = |k: usize| points.get(k).unwrap_or(&last);
+        let px: Lanes = std::array::from_fn(|k| lane(k).x);
+        let py: Lanes = std::array::from_fn(|k| lane(k).y);
+        let pz: Lanes = std::array::from_fn(|k| lane(k).z);
+
+        let mut sum = [0.0; POTENTIAL_BATCH];
         for (exponent, center, c) in &self.spherical {
-            let t = exponent * center.sub(point).norm_squared();
-            sum += c * self.boys_table.f0(t);
+            for k in 0..POTENTIAL_BATCH {
+                let (dx, dy, dz) = (center.x - px[k], center.y - py[k], center.z - pz[k]);
+                let t = exponent * (dx * dx + dy * dy + dz * dz);
+                sum[k] += c * self.boys_table.f0(t);
+            }
         }
         for d in &self.distributions {
-            let pc = d.center.sub(point);
-            let t = d.exponent * pc.norm_squared();
+            let pc: [Lanes; 3] = [
+                std::array::from_fn(|k| d.center.x - px[k]),
+                std::array::from_fn(|k| d.center.y - py[k]),
+                std::array::from_fn(|k| d.center.z - pz[k]),
+            ];
             hermite_coulomb(
                 d.max_l,
                 d.exponent,
-                t,
-                [pc.x, pc.y, pc.z],
+                &pc,
                 &self.boys_table,
                 &mut self.boys,
                 &mut self.r,
             );
             for &(index, c) in &d.terms {
-                sum += c * self.r[index];
+                let r = &self.r[index];
+                for k in 0..POTENTIAL_BATCH {
+                    sum[k] += c * r[k];
+                }
             }
         }
-        sum
+        out.copy_from_slice(&sum[..out.len()]);
     }
 }
 
 /// Fills `r` with the Hermite Coulomb integrals `R^n_tuv(alpha, pc)` for every
-/// `n + t + u + v <= l`, stored at `((n * dim + t) * dim + u) * dim + v` with `dim = l + 1`
-/// (so the `n = 0` ones come first, at `(t * dim + u) * dim + v`).
+/// `n + t + u + v <= l` and every point of a batch (`pc` holds the components of `P - C`
+/// for each point), stored at `((n * dim + t) * dim + u) * dim + v` with `dim = l + 1` (so
+/// the `n = 0` ones come first, at `(t * dim + u) * dim + v`).
 fn hermite_coulomb(
     l: usize,
     alpha: f64,
-    t: f64,
-    pc: [f64; 3],
+    pc: &[Lanes; 3],
     boys_table: &BoysTable,
     boys: &mut [f64],
-    r: &mut [f64],
+    r: &mut [Lanes],
 ) {
     // Dispatching to a compile-time `l` lets the compiler unroll the recursion.
     let f = match l {
@@ -661,69 +694,77 @@ fn hermite_coulomb(
         4 => hermite_coulomb_fixed::<4>,
         5 => hermite_coulomb_fixed::<5>,
         6 => hermite_coulomb_fixed::<6>,
-        _ => return hermite_coulomb_impl(l, alpha, t, pc, boys_table, boys, r),
+        _ => return hermite_coulomb_impl(l, alpha, pc, boys_table, boys, r),
     };
-    f(alpha, t, pc, boys_table, boys, r)
+    f(alpha, pc, boys_table, boys, r)
 }
 
 fn hermite_coulomb_fixed<const L: usize>(
     alpha: f64,
-    t: f64,
-    pc: [f64; 3],
+    pc: &[Lanes; 3],
     boys_table: &BoysTable,
     boys: &mut [f64],
-    r: &mut [f64],
+    r: &mut [Lanes],
 ) {
-    hermite_coulomb_impl(L, alpha, t, pc, boys_table, boys, r)
+    hermite_coulomb_impl(L, alpha, pc, boys_table, boys, r)
 }
 
 #[inline(always)]
 fn hermite_coulomb_impl(
     l: usize,
     alpha: f64,
-    t: f64,
-    pc: [f64; 3],
+    pc: &[Lanes; 3],
     boys_table: &BoysTable,
     boys: &mut [f64],
-    r: &mut [f64],
+    r: &mut [Lanes],
 ) {
-    boys_table.fill(l, t, boys);
     let dim = l + 1;
     let block = dim * dim * dim;
-    let mut factor = 1.0;
-    for (n, f) in boys.iter().enumerate().take(l + 1) {
-        r[n * block] = factor * f;
-        factor *= -2.0 * alpha;
+    for k in 0..POTENTIAL_BATCH {
+        let t = alpha * (pc[0][k] * pc[0][k] + pc[1][k] * pc[1][k] + pc[2][k] * pc[2][k]);
+        boys_table.fill(l, t, boys);
+        let mut factor = 1.0;
+        for (n, f) in boys.iter().enumerate().take(l + 1) {
+            r[n * block][k] = factor * f;
+            factor *= -2.0 * alpha;
+        }
     }
     for n in (0..l).rev() {
-        let here = n * block;
-        let up = (n + 1) * block;
+        let (lower, upper) = r.split_at_mut((n + 1) * block);
+        let here = &mut lower[n * block..];
         let max = l - n;
         for tx in 0..=max {
             for ty in 0..=(max - tx) {
                 for tz in 0..=(max - tx - ty) {
-                    let value = if tx > 0 {
-                        let mut v = pc[0] * r[up + ((tx - 1) * dim + ty) * dim + tz];
-                        if tx > 1 {
-                            v += (tx - 1) as f64 * r[up + ((tx - 2) * dim + ty) * dim + tz];
-                        }
-                        v
+                    // R^n_tuv from R^(n+1) of the lowered index along the first nonzero axis.
+                    let (axis, order, lowered) = if tx > 0 {
+                        (0, tx, ((tx - 1) * dim + ty) * dim + tz)
                     } else if ty > 0 {
-                        let mut v = pc[1] * r[up + (ty - 1) * dim + tz];
-                        if ty > 1 {
-                            v += (ty - 1) as f64 * r[up + (ty - 2) * dim + tz];
-                        }
-                        v
+                        (1, ty, (ty - 1) * dim + tz)
                     } else if tz > 0 {
-                        let mut v = pc[2] * r[up + tz - 1];
-                        if tz > 1 {
-                            v += (tz - 1) as f64 * r[up + tz - 2];
-                        }
-                        v
+                        (2, tz, tz - 1)
                     } else {
                         continue;
                     };
-                    r[here + (tx * dim + ty) * dim + tz] = value;
+                    let step = match axis {
+                        0 => dim * dim,
+                        1 => dim,
+                        _ => 1,
+                    };
+                    let target = &mut here[(tx * dim + ty) * dim + tz];
+                    let first = &upper[lowered];
+                    let x = &pc[axis];
+                    if order > 1 {
+                        let second = &upper[lowered - step];
+                        let factor = (order - 1) as f64;
+                        for k in 0..POTENTIAL_BATCH {
+                            target[k] = x[k] * first[k] + factor * second[k];
+                        }
+                    } else {
+                        for k in 0..POTENTIAL_BATCH {
+                            target[k] = x[k] * first[k];
+                        }
+                    }
                 }
             }
         }

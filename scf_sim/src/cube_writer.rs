@@ -1,5 +1,5 @@
 use crate::basis::{BasisEvaluator, BasisSet};
-use crate::integrals::CoulombPotentialEvaluator;
+use crate::integrals::{CoulombPotentialEvaluator, POTENTIAL_BATCH};
 use crate::sim::density_matrix;
 use ndarray::{Array2, s};
 use scf_core::Atom;
@@ -127,28 +127,6 @@ impl CubeWriter {
     }
 }
 
-/// Evaluates `f` at every point of `grid`, in the same x-slowest/z-fastest order the cube
-/// format expects.
-fn evaluate_grid(grid: &Grid, mut f: impl FnMut(&Point) -> f64) -> Vec<f64> {
-    let mut values = Vec::new();
-
-    for ix in 0..grid.nx {
-        for iy in 0..grid.ny {
-            for iz in 0..grid.nz {
-                let r = Point::new(
-                    grid.origin.x + (ix as f64) * grid.dx,
-                    grid.origin.y + (iy as f64) * grid.dy,
-                    grid.origin.z + (iz as f64) * grid.dz,
-                );
-
-                values.push(f(&r));
-            }
-        }
-    }
-
-    values
-}
-
 /// The values of the first `num_orbitals` molecular orbitals (columns of `c`) at every
 /// point of `grid`, one vector per orbital in cube order. The basis functions are
 /// evaluated once per point, then turned into orbitals one x-slab at a time with a single
@@ -213,15 +191,35 @@ fn evaluate_electrostatic_potential(
     density: &Array2<f64>,
 ) -> Vec<f64> {
     let mut electronic = CoulombPotentialEvaluator::new(&basis.functions, density);
-    evaluate_grid(grid, |r| {
-        let v_nuclear: f64 = atoms
-            .iter()
-            .map(|a| (a.charge as f64) / r.distance(&a.position).max(MIN_NUCLEAR_DISTANCE))
-            .sum();
-        let v_electronic = electronic.evaluate(r);
-
-        v_nuclear - v_electronic
-    })
+    let mut values = Vec::with_capacity(grid.nx * grid.ny * grid.nz);
+    let mut v_electronic = [0.0; POTENTIAL_BATCH];
+    for ix in 0..grid.nx {
+        for iy in 0..grid.ny {
+            for start in (0..grid.nz).step_by(POTENTIAL_BATCH) {
+                let points: Vec<Point> = (start..grid.nz.min(start + POTENTIAL_BATCH))
+                    .map(|iz| {
+                        Point::new(
+                            grid.origin.x + (ix as f64) * grid.dx,
+                            grid.origin.y + (iy as f64) * grid.dy,
+                            grid.origin.z + (iz as f64) * grid.dz,
+                        )
+                    })
+                    .collect();
+                let batch = &mut v_electronic[..points.len()];
+                electronic.evaluate_batch(&points, batch);
+                for (r, electronic_value) in points.iter().zip(batch.iter()) {
+                    let v_nuclear: f64 = atoms
+                        .iter()
+                        .map(|a| {
+                            (a.charge as f64) / r.distance(&a.position).max(MIN_NUCLEAR_DISTANCE)
+                        })
+                        .sum();
+                    values.push(v_nuclear - electronic_value);
+                }
+            }
+        }
+    }
+    values
 }
 
 fn compute_grid(atoms: &[Atom]) -> Grid {

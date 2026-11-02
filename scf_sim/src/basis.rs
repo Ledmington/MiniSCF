@@ -684,6 +684,28 @@ mod tests {
                 "At {point:?} expected {expected} but was {actual} (seed: {seed})."
             );
         }
+
+        // A batch of distinct points gives the same values as one point at a time.
+        for len in [1, 5, integrals::POTENTIAL_BATCH] {
+            let points: Vec<Point> = (0..len)
+                .map(|_| {
+                    Point::new(
+                        rng.random_range(-3.0..3.0),
+                        rng.random_range(-3.0..3.0),
+                        rng.random_range(-3.0..3.0),
+                    )
+                })
+                .collect();
+            let mut batch = vec![0.0; len];
+            evaluator.evaluate_batch(&points, &mut batch);
+            for (point, actual) in points.iter().zip(&batch) {
+                let expected = evaluator.evaluate(point);
+                assert!(
+                    (actual - expected).abs() <= 1e-14 * expected.abs().max(1.0),
+                    "At {point:?} expected {expected} but was {actual} (seed: {seed})."
+                );
+            }
+        }
     }
 
     #[test]
