@@ -111,9 +111,10 @@ impl CubeWriter {
         // -------------------------
         // 5. Volume data
         // -------------------------
+        let formatter = ValueFormatter::new();
         let mut buffer = Vec::with_capacity(values.len() * 13 + values.len() / 6 + 1);
         for (count, v) in values.iter().enumerate() {
-            format_value(*v, &mut buffer);
+            formatter.format(*v, &mut buffer);
             if (count + 1) % 6 == 0 {
                 buffer.push(b'\n');
             }
@@ -124,70 +125,92 @@ impl CubeWriter {
     }
 }
 
-/// Appends `v` formatted exactly as `format!("{v:13.5e}")` to `out`, but much faster: the
-/// six significant digits are computed in floating point, falling back to the standard
-/// formatter whenever the rounding could be ambiguous.
-fn format_value(v: f64, out: &mut Vec<u8>) {
-    let magnitude = v.abs();
-    // Only normal numbers well inside the f64 range take the fast path.
-    if (1e-300..1e300).contains(&magnitude) {
-        // A first guess (truncation instead of `floor`, which is a library call), corrected
-        // until the mantissa has six digits before the decimal point.
-        let mut exponent = magnitude.log10() as i32;
-        let mut scaled = magnitude * 10f64.powi(5 - exponent);
-        while scaled >= 1_000_000.0 {
-            exponent += 1;
-            scaled = magnitude * 10f64.powi(5 - exponent);
-        }
-        while scaled < 100_000.0 {
-            exponent -= 1;
-            scaled = magnitude * 10f64.powi(5 - exponent);
-        }
-        // Truncating conversions, unlike `f64::round`/`floor`, are not library calls.
-        let whole = scaled as u32;
-        let fraction = scaled - f64::from(whole);
-        let rounded = whole + u32::from(fraction > 0.5);
-        // `scaled` is within a few ulps (~1e-10) of the exact value, so unless it is this
-        // close to a rounding tie, it rounds the same way as the exact decimal expansion.
-        if (fraction - 0.5).abs() > 1e-6 && (100_000..1_000_000).contains(&rounded) {
-            let mut digits = rounded;
-            let mut text = [0u8; 16];
-            let mut len = 0;
-            if v < 0.0 {
-                text[len] = b'-';
-                len += 1;
-            }
-            let mut mantissa = [0u8; 6];
-            for d in mantissa.iter_mut().rev() {
-                *d = b'0' + (digits % 10) as u8;
-                digits /= 10;
-            }
-            text[len] = mantissa[0];
-            text[len + 1] = b'.';
-            text[len + 2..len + 7].copy_from_slice(&mantissa[1..]);
-            text[len + 7] = b'e';
-            len += 8;
-            if exponent < 0 {
-                text[len] = b'-';
-                len += 1;
-            }
-            let exponent_digits = exponent.unsigned_abs();
-            if exponent_digits >= 100 {
-                text[len] = b'0' + (exponent_digits / 100) as u8;
-                len += 1;
-            }
-            if exponent_digits >= 10 {
-                text[len] = b'0' + (exponent_digits / 10 % 10) as u8;
-                len += 1;
-            }
-            text[len] = b'0' + (exponent_digits % 10) as u8;
-            len += 1;
-            out.extend(std::iter::repeat_n(b' ', 13usize.saturating_sub(len)));
-            out.extend_from_slice(&text[..len]);
-            return;
-        }
+/// Formats values exactly as `format!("{v:13.5e}")`, but much faster: the six significant
+/// digits are computed in floating point, falling back to the standard formatter whenever
+/// the rounding could be ambiguous.
+struct ValueFormatter {
+    /// `10^k` (correctly rounded) at index `k + POWER_OFFSET`.
+    powers_of_ten: Vec<f64>,
+}
+
+const POWER_OFFSET: i32 = 310;
+
+impl ValueFormatter {
+    fn new() -> Self {
+        let powers_of_ten = (-POWER_OFFSET..=POWER_OFFSET)
+            .map(|k| format!("1e{k}").parse().expect("valid float literal"))
+            .collect();
+        Self { powers_of_ten }
     }
-    out.extend_from_slice(format!("{v:13.5e}").as_bytes());
+
+    fn power_of_ten(&self, k: i32) -> f64 {
+        self.powers_of_ten[(k + POWER_OFFSET) as usize]
+    }
+
+    /// Appends `v` formatted as `{v:13.5e}` to `out`.
+    fn format(&self, v: f64, out: &mut Vec<u8>) {
+        let magnitude = v.abs();
+        // Only normal numbers well inside the f64 range take the fast path.
+        if (1e-300..1e300).contains(&magnitude) {
+            // A first guess from the binary exponent (78913 / 2^18 ~ log10(2)), corrected until
+            // the mantissa has six digits before the decimal point.
+            let binary_exponent = ((magnitude.to_bits() >> 52) as i32) - 1023;
+            let mut exponent = (binary_exponent * 78913) >> 18;
+            let mut scaled = magnitude * self.power_of_ten(5 - exponent);
+            while scaled >= 1_000_000.0 {
+                exponent += 1;
+                scaled = magnitude * self.power_of_ten(5 - exponent);
+            }
+            while scaled < 100_000.0 {
+                exponent -= 1;
+                scaled = magnitude * self.power_of_ten(5 - exponent);
+            }
+            // Truncating conversions, unlike `f64::round`/`floor`, are not library calls.
+            let whole = scaled as u32;
+            let fraction = scaled - f64::from(whole);
+            let rounded = whole + u32::from(fraction > 0.5);
+            // `scaled` is within a few ulps (~1e-10) of the exact value, so unless it is this
+            // close to a rounding tie, it rounds the same way as the exact decimal expansion.
+            if (fraction - 0.5).abs() > 1e-6 && (100_000..1_000_000).contains(&rounded) {
+                let mut digits = rounded;
+                let mut text = [0u8; 16];
+                let mut len = 0;
+                if v < 0.0 {
+                    text[len] = b'-';
+                    len += 1;
+                }
+                let mut mantissa = [0u8; 6];
+                for d in mantissa.iter_mut().rev() {
+                    *d = b'0' + (digits % 10) as u8;
+                    digits /= 10;
+                }
+                text[len] = mantissa[0];
+                text[len + 1] = b'.';
+                text[len + 2..len + 7].copy_from_slice(&mantissa[1..]);
+                text[len + 7] = b'e';
+                len += 8;
+                if exponent < 0 {
+                    text[len] = b'-';
+                    len += 1;
+                }
+                let exponent_digits = exponent.unsigned_abs();
+                if exponent_digits >= 100 {
+                    text[len] = b'0' + (exponent_digits / 100) as u8;
+                    len += 1;
+                }
+                if exponent_digits >= 10 {
+                    text[len] = b'0' + (exponent_digits / 10 % 10) as u8;
+                    len += 1;
+                }
+                text[len] = b'0' + (exponent_digits % 10) as u8;
+                len += 1;
+                out.extend(std::iter::repeat_n(b' ', 13usize.saturating_sub(len)));
+                out.extend_from_slice(&text[..len]);
+                return;
+            }
+        }
+        out.extend_from_slice(format!("{v:13.5e}").as_bytes());
+    }
 }
 
 /// The values of the first `num_orbitals` molecular orbitals (columns of `c`) at every
@@ -537,9 +560,10 @@ mod tests {
                     * 10f64.powi((state % 40) as i32 - 20),
             );
         }
+        let formatter = ValueFormatter::new();
         for v in values {
             let mut actual = Vec::new();
-            format_value(v, &mut actual);
+            formatter.format(v, &mut actual);
             assert_eq!(
                 String::from_utf8(actual).unwrap(),
                 format!("{v:13.5e}"),
