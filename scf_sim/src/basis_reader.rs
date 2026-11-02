@@ -34,11 +34,18 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
     let mut current_element: Option<String> = None;
     let mut current_shell: Option<ShellTemplate> = None;
     let mut current_shell_p: Option<ShellTemplate> = None; // for SP shells
+    let mut spherical = false;
+    let mut has_d_shells = false;
 
     for line in text.lines() {
         let trimmed = line.trim();
 
-        if trimmed.is_empty() || trimmed.starts_with('#') || trimmed.starts_with("BASIS") {
+        if trimmed.starts_with("BASIS") {
+            spherical = trimmed.split_whitespace().any(|s| s == "SPHERICAL");
+            continue;
+        }
+
+        if trimmed.is_empty() || trimmed.starts_with('#') {
             continue;
         }
 
@@ -75,6 +82,14 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
                 "P" => {
                     current_shell = Some(ShellTemplate {
                         angular: AngularMomentum::P,
+                        primitives: Vec::new(),
+                    });
+                }
+
+                "D" => {
+                    has_d_shells = true;
+                    current_shell = Some(ShellTemplate {
+                        angular: AngularMomentum::D,
                         primitives: Vec::new(),
                     });
                 }
@@ -131,6 +146,12 @@ fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
         }
     }
 
+    if spherical && has_d_shells {
+        log::warn!(
+            "The basis set is declared SPHERICAL, but d shells are always built as 6 Cartesian functions: energies will differ from reference calculations that use 5 spherical d functions."
+        );
+    }
+
     library
 }
 
@@ -146,59 +167,21 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
         });
 
         for template in templates {
-            match template.angular {
-                AngularMomentum::S => {
-                    let primitives = template
-                        .primitives
-                        .iter()
-                        .map(|&(exponent, coeff)| {
-                            PrimitiveGaussian::new(coeff, exponent, atom.position)
-                        })
-                        .collect();
+            let primitives: Vec<PrimitiveGaussian> = template
+                .primitives
+                .iter()
+                .map(|&(exponent, coeff)| PrimitiveGaussian::new(coeff, exponent, atom.position))
+                .collect();
 
-                    shells.push((
-                        Shell {
-                            center: atom.position,
-                            primitives,
-                        },
-                        (0, 0, 0),
-                    ));
-                }
-
-                AngularMomentum::P => {
-                    let primitives: Vec<PrimitiveGaussian> = template
-                        .primitives
-                        .iter()
-                        .map(|&(exponent, coeff)| {
-                            PrimitiveGaussian::new(coeff, exponent, atom.position)
-                        })
-                        .collect();
-
-                    // px
-                    shells.push((
-                        Shell {
-                            center: atom.position,
-                            primitives: primitives.clone(),
-                        },
-                        (1, 0, 0),
-                    ));
-                    // py
-                    shells.push((
-                        Shell {
-                            center: atom.position,
-                            primitives: primitives.clone(),
-                        },
-                        (0, 1, 0),
-                    ));
-                    // pz
-                    shells.push((
-                        Shell {
-                            center: atom.position,
-                            primitives,
-                        },
-                        (0, 0, 1),
-                    ));
-                }
+            // One basis function per Cartesian component: s, px/py/pz, or the 6 d functions.
+            for component in template.angular.cartesian_components() {
+                shells.push((
+                    Shell {
+                        center: atom.position,
+                        primitives: primitives.clone(),
+                    },
+                    component,
+                ));
             }
         }
     }
@@ -371,5 +354,61 @@ END
             expected, basis,
             "Expected parsed basis set to be equal to {expected:?} but was {basis:?} (seed: {seed})."
         );
+    }
+
+    #[test]
+    fn six_31g_star_carbon_d_shell() {
+        let text = "BASIS \"ao basis\" CARTESIAN PRINT
+#BASIS SET: (10s,4p,1d) -> [3s,2p,1d]
+C    S
+      0.3047524880E+04       0.1834737132E-02
+      0.4573695180E+03       0.1403732281E-01
+      0.1039486850E+03       0.6884262226E-01
+      0.2921015530E+02       0.2321844432E+00
+      0.9286662960E+01       0.4679413484E+00
+      0.3163926960E+01       0.3623119853E+00
+C    SP
+      0.7868272350E+01      -0.1193324198E+00       0.6899906659E-01
+      0.1881288540E+01      -0.1608541517E+00       0.3164239610E+00
+      0.5442492580E+00       0.1143456438E+01       0.7443082909E+00
+C    SP
+      0.1687144782E+00       0.1000000000E+01       0.1000000000E+01
+C    D
+      0.8000000000E+00       1.0000000
+END
+";
+        let center = Point::new(0.5, -1.0, 2.0);
+        let library = parse_nwchem_basis_text(text);
+        let basis = build_basis(
+            &[Atom {
+                element: element::CARBON,
+                position: center,
+                charge: 6,
+            }],
+            &library,
+        );
+
+        // [3s,2p,1d] with Cartesian d: 3 + 2 * 3 + 6 = 15 functions.
+        assert_eq!(basis.functions.len(), 15);
+
+        let d_functions = &basis.functions[9..];
+        let expected_components = [
+            (2, 0, 0),
+            (1, 1, 0),
+            (1, 0, 1),
+            (0, 2, 0),
+            (0, 1, 1),
+            (0, 0, 2),
+        ];
+        for (bf, expected) in d_functions.iter().zip(expected_components) {
+            assert_eq!(bf.angular_momentum, expected);
+            assert_eq!(
+                *bf.shell,
+                Shell {
+                    center,
+                    primitives: vec![PrimitiveGaussian::new(1.0, 0.8, center)],
+                }
+            );
+        }
     }
 }

@@ -320,22 +320,31 @@ pub(crate) fn primitive_nuclear_attraction(
     let e_y = hermite_coefficients(la.1, lb.1, pa[1], pb[1], p);
     let e_z = hermite_coefficients(la.2, lb.2, pa[2], pb[2], p);
 
-    let rpc2 = center.sub(nucleus).norm_squared();
-
-    let t = p * rpc2;
+    let pc = center.sub(nucleus);
 
     let prefactor = -2.0 * PI / p * (-mu * r2).exp();
+
+    // Hermite Coulomb integrals R_tuv(p, P - C): for t + u + v >= 2 (or P != C) these are
+    // not just (-2p)^(t+u+v) F_{t+u+v}, they need the full recursion.
+    let max_tx = e_x.len() - 1;
+    let max_ty = e_y.len() - 1;
+    let max_tz = e_z.len() - 1;
+    let r = RCoulomb::new(
+        max_tx + max_ty + max_tz,
+        max_tx,
+        max_ty,
+        max_tz,
+        p,
+        p * pc.norm_squared(),
+        (pc.x, pc.y, pc.z),
+    );
 
     let mut sum = 0.0;
 
     for (tx, tx_elem) in e_x.iter().enumerate() {
         for (ty, ty_elem) in e_y.iter().enumerate() {
             for (tz, tz_elem) in e_z.iter().enumerate() {
-                sum += tx_elem
-                    * ty_elem
-                    * tz_elem
-                    * boys(tx + ty + tz, t)
-                    * (-2.0 * p).powi((tx + ty + tz) as i32);
+                sum += tx_elem * ty_elem * tz_elem * r.get(0, tx, ty, tz);
             }
         }
     }
@@ -434,40 +443,39 @@ fn weighted_center(a: &PrimitiveGaussian, b: &PrimitiveGaussian, p: f64) -> Poin
 
 // ------ special functions -----------------------------------------------
 
-fn erf(x: f64) -> f64 {
-    let a1 = 0.254829592;
-    let a2 = -0.284496736;
-    let a3 = 1.421413741;
-    let a4 = -1.453152027;
-    let a5 = 1.061405429;
-    let p = 0.3275911;
-    let sign = if x < 0.0 { -1.0 } else { 1.0 };
-    let t = 1.0 / (1.0 + p * x.abs());
-    let y = 1.0 - (((((a5 * t + a4) * t + a3) * t + a2) * t + a1) * t) * (-x * x).exp();
-    sign * y
-}
+/// Above this argument, `erf(sqrt(t))` equals 1 to double precision, so `F_0` has a closed
+/// form and the upward recursion is numerically stable.
+const BOYS_ASYMPTOTIC_THRESHOLD: f64 = 40.0;
 
-fn boys_0(t: f64) -> f64 {
-    if t < 1.0e-8 {
-        return 1.0;
-    }
-
-    0.5 * (PI / t).sqrt() * erf(t.sqrt())
-}
-
+/// The Boys function `F_n(t) = integral_0^1 x^(2n) exp(-t x^2) dx`.
+///
+/// For small and moderate `t`, `F_n` is computed from its power series
+/// `F_n(t) = exp(-t) * sum_k (2t)^k / ((2n+1)(2n+3)...(2n+2k+1))`, which has only positive
+/// terms and hence no cancellation. For large `t`, `F_0(t) = sqrt(pi/t)/2` and the upward
+/// recursion `F_{m+1} = ((2m+1) F_m - exp(-t)) / (2t)` is used, which is stable there.
+///
+/// Higher angular momenta (d functions) need `n` up to 8 in the ERIs: a naive upward
+/// recursion from `F_0` amplifies rounding errors by `~1/(2t)` at every step, which is
+/// catastrophic for small `t`.
 fn boys(n: usize, t: f64) -> f64 {
-    if t < 1.0e-8 {
-        // Small-T expansion
-        return 1.0 / (2 * n + 1) as f64;
+    if t >= BOYS_ASYMPTOTIC_THRESHOLD {
+        let exp_t = (-t).exp();
+        let mut f = 0.5 * (PI / t).sqrt();
+        for m in 0..n {
+            f = (((2 * m + 1) as f64) * f - exp_t) / (2.0 * t);
+        }
+        return f;
     }
 
-    let mut f = boys_0(t);
-
-    for m in 0..n {
-        f = (((2 * m + 1) as f64) * f - (-t).exp()) / (2.0 * t);
+    let mut term = 1.0 / (2 * n + 1) as f64;
+    let mut sum = term;
+    let mut k = 1;
+    while term > sum * f64::EPSILON {
+        term *= 2.0 * t / (2 * n + 2 * k + 1) as f64;
+        sum += term;
+        k += 1;
     }
-
-    f
+    (-t).exp() * sum
 }
 
 #[cfg(test)]
@@ -481,11 +489,51 @@ mod tests {
 
     use super::*;
 
+    /// Reference value of the Boys function by composite Simpson quadrature of its
+    /// defining integral.
+    fn boys_by_quadrature(n: usize, t: f64) -> f64 {
+        const STEPS: usize = 20_000;
+        let h = 1.0 / STEPS as f64;
+        let f = |x: f64| x.powi(2 * n as i32) * (-t * x * x).exp();
+        let mut sum = f(0.0) + f(1.0);
+        for i in 1..STEPS {
+            let weight = if i % 2 == 1 { 4.0 } else { 2.0 };
+            sum += weight * f(i as f64 * h);
+        }
+        sum * h / 3.0
+    }
+
+    #[rstest]
+    fn test_boys_function_matches_quadrature(
+        #[values(0, 1, 2, 4, 6, 8, 12)] n: usize,
+        #[values(0.0, 1e-12, 1e-6, 1e-3, 0.1, 1.0, 5.0, 20.0, 39.9, 40.0, 60.0, 200.0)] t: f64,
+    ) {
+        let actual = boys(n, t);
+        let expected = boys_by_quadrature(n, t);
+        assert!(
+            ((actual - expected) / expected).abs() < 1e-11,
+            "F_{n}({t}): expected {expected} but was {actual}."
+        );
+    }
+
+    #[test]
+    fn test_boys_function_closed_forms() {
+        for n in 0..10 {
+            let expected = 1.0 / (2 * n + 1) as f64;
+            assert_eq!(boys(n, 0.0), expected, "F_{n}(0)");
+        }
+        // F_0(t) = sqrt(pi/t) erf(sqrt(t)) / 2, with erf(1) to 16 digits.
+        let expected = 0.5 * PI.sqrt() * 0.842_700_792_949_714_9;
+        assert!((boys(0, 1.0) - expected).abs() < 1e-15);
+    }
+
     #[rstest]
     #[case(0, 0)]
     #[case(0, 1)]
     #[case(1, 1)]
     #[case(0, 2)]
+    #[case(1, 2)]
+    #[case(2, 2)]
     fn test_symmetric_hermite_coefficients(#[case] ia: u8, #[case] ib: u8) {
         let seed = rand::rng().random();
         let mut rng = ChaCha8Rng::seed_from_u64(seed);
@@ -645,6 +693,114 @@ mod tests {
                         );
                     }
                 }
+            }
+        }
+    }
+
+    const P_COMPONENTS: [(u8, u8, u8); 3] = [(1, 0, 0), (0, 1, 0), (0, 0, 1)];
+
+    /// A representative set of (other) angular momenta, up to d.
+    const OTHER_COMPONENTS: [(u8, u8, u8); 5] =
+        [(0, 0, 0), (0, 1, 0), (1, 0, 1), (0, 2, 0), (1, 1, 0)];
+
+    fn moved(p: &Point, axis: usize, delta: f64) -> Point {
+        let mut c = p.coordinates();
+        c[axis] += delta;
+        Point::new(c[0], c[1], c[2])
+    }
+
+    /// Checks that the d-type (and higher) integrals computed by `g` agree with the ones
+    /// obtained from lower angular momenta via the identity, for an unnormalized
+    /// Cartesian Gaussian `G_l` with exponent `alpha` centered at `A`,
+    ///
+    ///   d/dA_i G_l = 2 alpha G_{l + e_i} - l_i G_{l - e_i}
+    ///
+    /// where the center derivative is taken by central finite differences. Since `g` is
+    /// linear in its first function, the same identity holds for the integrals. This
+    /// validates the d-type integrals independently of the McMurchie-Davidson recursion,
+    /// using only the (already validated) s- and p-type ones.
+    fn check_angular_momentum_raising(
+        name: &str,
+        g: impl Fn(&PrimitiveGaussian, &(u8, u8, u8)) -> f64,
+    ) {
+        const H: f64 = 1e-4;
+        let alpha = 0.8;
+        let center = Point::new(0.3, -0.2, 0.5);
+        let at = |c: Point| PrimitiveGaussian::new(1.0, alpha, c);
+
+        for lower in P_COMPONENTS {
+            for axis in 0..3 {
+                let target = shift(&lower, axis, 1).unwrap();
+
+                let derivative = (g(&at(moved(&center, axis, H)), &lower)
+                    - g(&at(moved(&center, axis, -H)), &lower))
+                    / (2.0 * H);
+                let l_axis = lower_component(&lower, axis);
+                let below = match shift(&lower, axis, -1) {
+                    Some(l) => l_axis * g(&at(center), &l),
+                    None => 0.0,
+                };
+                let expected = (derivative + below) / (2.0 * alpha);
+
+                let actual = g(&at(center), &target);
+                assert!(
+                    (actual - expected).abs() < 1e-7 * expected.abs().max(1.0),
+                    "{name} for {target:?}: expected {expected} but was {actual}."
+                );
+            }
+        }
+    }
+
+    fn lower_component(l: &(u8, u8, u8), axis: usize) -> f64 {
+        [l.0, l.1, l.2][axis] as f64
+    }
+
+    #[test]
+    fn test_d_overlap_by_raising() {
+        let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
+        for lb in OTHER_COMPONENTS {
+            check_angular_momentum_raising(&format!("overlap with {lb:?}"), |a, la| {
+                primitive_overlap(a, &b, la, &lb)
+            });
+        }
+    }
+
+    #[test]
+    fn test_d_kinetic_energy_by_raising() {
+        let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
+        for lb in OTHER_COMPONENTS {
+            check_angular_momentum_raising(&format!("kinetic energy with {lb:?}"), |a, la| {
+                primitive_kinetic_energy(a, &b, la, &lb)
+            });
+        }
+    }
+
+    #[test]
+    fn test_d_nuclear_attraction_by_raising() {
+        let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
+        let nucleus = Point::new(0.7, 0.2, -0.6);
+        for lb in OTHER_COMPONENTS {
+            check_angular_momentum_raising(&format!("nuclear attraction with {lb:?}"), |a, la| {
+                primitive_nuclear_attraction(a, &b, &nucleus, la, &lb)
+            });
+        }
+    }
+
+    #[test]
+    fn test_d_electron_repulsion_by_raising() {
+        let b = PrimitiveGaussian::new(1.0, 1.3, Point::new(-0.4, 0.6, -0.1));
+        let c = PrimitiveGaussian::new(1.0, 0.6, Point::new(0.9, -0.5, 0.2));
+        let d = PrimitiveGaussian::new(1.0, 2.1, Point::new(0.1, 0.8, -0.7));
+        for lb in OTHER_COMPONENTS {
+            for (lc, ld) in [
+                ((0, 0, 0), (0, 0, 0)),
+                ((2, 0, 0), (0, 1, 1)),
+                ((0, 0, 1), (1, 0, 1)),
+            ] {
+                check_angular_momentum_raising(
+                    &format!("ERI with {lb:?}, {lc:?}, {ld:?}"),
+                    |a, la| primitive_eri((a, la), (&b, &lb), (&c, &lc), (&d, &ld)),
+                );
             }
         }
     }
