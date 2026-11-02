@@ -8,10 +8,12 @@ use scf_sim::{
     integrals,
     sim::{OptimizationParameters, run_rhf_simulation},
 };
-use simple_logger::SimpleLogger;
+use std::fs::File;
 use std::path::Path;
 use std::time::Instant;
 use xyz::read_xyz;
+
+mod logger;
 
 /// A small and simple simulator of Hartree-Fock method
 #[derive(Parser, Debug)]
@@ -44,7 +46,12 @@ struct Args {
     )]
     formats: Vec<CubeFormat>,
 
-    /// Overwrite output files if they already exist
+    /// Write the log to this file instead of the terminal (errors are still shown on the
+    /// terminal)
+    #[arg(short, long)]
+    log_file: Option<String>,
+
+    /// Overwrite output files (cube files and log file) if they already exist
     #[arg(long, default_value_t = false)]
     force: bool,
 
@@ -166,13 +173,17 @@ fn check_output_files(filenames: &[String], force: bool) {
 fn main() -> std::io::Result<()> {
     let beginning = Instant::now();
 
-    SimpleLogger::new()
-        .env()
-        .without_timestamps()
-        .init()
-        .unwrap();
+    logger::init();
 
     let args = Args::parse();
+
+    if let Some(log_file) = &args.log_file {
+        check_output_files(std::slice::from_ref(log_file), args.force);
+        match File::create(log_file) {
+            Ok(file) => logger::redirect_to_file(file),
+            Err(err) => fail(&format!("Cannot create log file '{log_file}': {err}.")),
+        }
+    }
 
     check_input_file(&args.input_xyz, "input file");
     check_input_file(&args.basis_file, "basis set file");
@@ -289,6 +300,15 @@ mod tests {
         let custom = Args::try_parse_from(["rhf_sim", "-o", "mysim"]).unwrap();
         assert_eq!(custom.output_prefix, "mysim");
         assert!(Args::try_parse_from(["rhf_sim", "--output-prefix", ""]).is_err());
+    }
+
+    #[test]
+    fn log_file_flag_is_optional() {
+        assert_eq!(Args::try_parse_from(["rhf_sim"]).unwrap().log_file, None);
+        let args = Args::try_parse_from(["rhf_sim", "--log-file", "run.log"]).unwrap();
+        assert_eq!(args.log_file.as_deref(), Some("run.log"));
+        let short = Args::try_parse_from(["rhf_sim", "-l", "run.log"]).unwrap();
+        assert_eq!(short.log_file.as_deref(), Some("run.log"));
     }
 
     #[test]
