@@ -474,17 +474,8 @@ pub(crate) struct CoulombPotentialEvaluator {
 
 impl CoulombPotentialEvaluator {
     pub(crate) fn new(functions: &[BasisFunction], density: &ndarray::Array2<f64>) -> Self {
-        // Consecutive functions sharing a shell are expanded together.
-        let mut groups: Vec<std::ops::Range<usize>> = Vec::new();
-        let mut start = 0;
-        for i in 1..=functions.len() {
-            if i == functions.len()
-                || !std::sync::Arc::ptr_eq(&functions[i].shell, &functions[start].shell)
-            {
-                groups.push(start..i);
-                start = i;
-            }
-        }
+        // Functions sharing a shell are expanded together.
+        let groups = crate::basis::shell_groups(functions);
 
         let total_l = |f: &BasisFunction| {
             let (x, y, z) = f.angular_momentum;

@@ -202,18 +202,6 @@ impl BasisSet {
         eri
     }
 
-    pub(crate) fn evaluate_molecular_orbital(
-        &self,
-        r: &Point,
-        coefficients: &Array2<f64>,
-        mo_index: usize,
-    ) -> f64 {
-        self.functions
-            .iter()
-            .enumerate()
-            .map(|(mu, bf)| coefficients[[mu, mo_index]] * bf.compute(r))
-            .sum()
-    }
 }
 
 #[derive(Clone, PartialEq, Debug)]
@@ -252,6 +240,94 @@ pub(crate) struct Shell {
     pub(crate) primitives: Vec<PrimitiveGaussian>,
 }
 
+/// Splits `functions` into runs of consecutive functions on the same shell with the same
+/// total angular momentum (the Cartesian components of one shell), as index ranges.
+pub(crate) fn shell_groups(functions: &[BasisFunction]) -> Vec<std::ops::Range<usize>> {
+    let mut groups = Vec::new();
+    let mut start = 0;
+    for i in 1..=functions.len() {
+        if i == functions.len()
+            || functions[i].shell != functions[start].shell
+            || functions[i].total_angular_momentum() != functions[start].total_angular_momentum()
+        {
+            groups.push(start..i);
+            start = i;
+        }
+    }
+    groups
+}
+
+/// Evaluates every basis function at many points, sharing the primitive exponentials
+/// among the Cartesian components of each shell and precomputing the normalized
+/// contraction coefficients.
+pub(crate) struct BasisEvaluator {
+    shells: Vec<EvaluatorShell>,
+    max_primitives: usize,
+}
+
+struct EvaluatorShell {
+    center: Point,
+    alphas: Vec<f64>,
+    /// `(lx, ly, lz)` of each component and its normalized coefficient per primitive.
+    components: Vec<((i32, i32, i32), Vec<f64>)>,
+}
+
+impl BasisEvaluator {
+    pub(crate) fn new(functions: &[BasisFunction]) -> Self {
+        let shells: Vec<EvaluatorShell> = shell_groups(functions)
+            .into_iter()
+            .map(|group| {
+                let shell = &functions[group.start].shell;
+                EvaluatorShell {
+                    center: shell.center,
+                    alphas: shell.primitives.iter().map(|p| p.alpha).collect(),
+                    components: functions[group]
+                        .iter()
+                        .map(|f| {
+                            let (lx, ly, lz) = f.angular_momentum;
+                            let coefficients = shell
+                                .primitives
+                                .iter()
+                                .map(|p| f.normalized_coefficient(p))
+                                .collect();
+                            ((lx.into(), ly.into(), lz.into()), coefficients)
+                        })
+                        .collect(),
+                }
+            })
+            .collect();
+        let max_primitives = shells.iter().map(|s| s.alphas.len()).max().unwrap_or(0);
+        Self {
+            shells,
+            max_primitives,
+        }
+    }
+
+    /// Writes the value of every basis function at `r` into `values`, in basis order.
+    pub(crate) fn evaluate(&self, r: &Point, values: &mut [f64]) {
+        let mut exponentials = vec![0.0; self.max_primitives];
+        let mut index = 0;
+        for shell in &self.shells {
+            let dx = r.x - shell.center.x;
+            let dy = r.y - shell.center.y;
+            let dz = r.z - shell.center.z;
+            let r2 = dx * dx + dy * dy + dz * dz;
+            for (e, alpha) in exponentials.iter_mut().zip(&shell.alphas) {
+                *e = (-alpha * r2).exp();
+            }
+            for ((lx, ly, lz), coefficients) in &shell.components {
+                let radial: f64 = coefficients
+                    .iter()
+                    .zip(&exponentials)
+                    .map(|(c, e)| c * e)
+                    .sum();
+                values[index] = radial * dx.powi(*lx) * dy.powi(*ly) * dz.powi(*lz);
+                index += 1;
+            }
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub struct BasisFunction {
     pub(crate) shell: Arc<Shell>,
@@ -259,6 +335,7 @@ pub struct BasisFunction {
 }
 
 impl BasisFunction {
+    #[cfg(test)]
     pub(crate) fn compute(&self, r: &Point) -> f64 {
         let shell = &self.shell;
 
@@ -278,6 +355,11 @@ impl BasisFunction {
         let angular = dx.powi(lx.into()) * dy.powi(ly.into()) * dz.powi(lz.into());
 
         gaussian * angular
+    }
+
+    pub(crate) fn total_angular_momentum(&self) -> usize {
+        let (lx, ly, lz) = self.angular_momentum;
+        (lx + ly + lz) as usize
     }
 
     pub fn normalized_coefficient(&self, p: &PrimitiveGaussian) -> f64 {

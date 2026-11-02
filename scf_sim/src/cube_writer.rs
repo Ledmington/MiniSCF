@@ -1,7 +1,7 @@
-use crate::basis::BasisSet;
+use crate::basis::{BasisEvaluator, BasisSet};
 use crate::integrals::CoulombPotentialEvaluator;
 use crate::sim::density_matrix;
-use ndarray::Array2;
+use ndarray::{Array2, s};
 use scf_core::Atom;
 use scf_core::point::Point;
 use std::fs::File;
@@ -149,19 +149,52 @@ fn evaluate_grid(grid: &Grid, mut f: impl FnMut(&Point) -> f64) -> Vec<f64> {
     values
 }
 
-fn evaluate_orbital(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, mo_index: usize) -> Vec<f64> {
-    evaluate_grid(grid, |r| basis.evaluate_molecular_orbital(r, c, mo_index))
+/// The values of the first `num_orbitals` molecular orbitals (columns of `c`) at every
+/// point of `grid`, one vector per orbital in cube order. The basis functions are
+/// evaluated once per point, then turned into orbitals one x-slab at a time with a single
+/// matrix product.
+fn evaluate_orbitals(
+    grid: &Grid,
+    basis: &BasisSet,
+    c: &Array2<f64>,
+    num_orbitals: usize,
+) -> Vec<Vec<f64>> {
+    let evaluator = BasisEvaluator::new(&basis.functions);
+    let coefficients = c.slice(s![.., ..num_orbitals]);
+    let slab_len = grid.ny * grid.nz;
+    let mut orbitals = vec![Vec::with_capacity(grid.nx * slab_len); num_orbitals];
+    let mut phi = Array2::zeros((slab_len, basis.functions.len()));
+
+    for ix in 0..grid.nx {
+        for iy in 0..grid.ny {
+            for iz in 0..grid.nz {
+                let r = Point::new(
+                    grid.origin.x + (ix as f64) * grid.dx,
+                    grid.origin.y + (iy as f64) * grid.dy,
+                    grid.origin.z + (iz as f64) * grid.dz,
+                );
+                let mut row = phi.row_mut(iy * grid.nz + iz);
+                evaluator.evaluate(&r, row.as_slice_mut().expect("rows are contiguous"));
+            }
+        }
+        let psi = phi.dot(&coefficients);
+        for (values, column) in orbitals.iter_mut().zip(psi.columns()) {
+            values.extend(column.iter());
+        }
+    }
+
+    orbitals
 }
 
-fn evaluate_density(grid: &Grid, basis: &BasisSet, c: &Array2<f64>, n_occ: usize) -> Vec<f64> {
-    evaluate_grid(grid, |r| {
-        (0..n_occ)
-            .map(|mo_index| {
-                let psi = basis.evaluate_molecular_orbital(r, c, mo_index);
-                2.0 * psi * psi
-            })
-            .sum()
-    })
+/// The electron density 2 * sum_i psi_i^2 from the values of the occupied orbitals.
+fn density_from_orbitals(occupied: &[Vec<f64>], num_points: usize) -> Vec<f64> {
+    let mut density = vec![0.0; num_points];
+    for psi in occupied {
+        for (rho, value) in density.iter_mut().zip(psi) {
+            *rho += 2.0 * value * value;
+        }
+    }
+    density
 }
 
 /// A grid point can land exactly on a nucleus (e.g. atoms placed at coordinates that are
@@ -265,39 +298,17 @@ fn timed<T>(
     Ok(result)
 }
 
-fn dump_molecular_orbital(
-    writer: &CubeWriter,
-    basis: &BasisSet,
-    c: &Array2<f64>,
-    mo_index: usize,
-    grid: &Grid,
-    filename: String,
-) -> std::io::Result<()> {
-    timed(
-        format!("writing orbital {mo_index} to '{filename}'"),
-        || {
-            let values = evaluate_orbital(grid, basis, c, mo_index);
-            writer.write(&filename, &values)
-        },
-    )
-}
-
 fn dump_all_molecular_orbitals(
     writer: &CubeWriter,
-    basis: &BasisSet,
-    c: &Array2<f64>,
-    grid: &Grid,
+    orbitals: &[Vec<f64>],
     output_filename_prefix: &str,
 ) -> std::io::Result<()> {
-    timed(format!("writing {} orbitals", c.ncols()), || {
-        for mo_index in 0..c.ncols() {
-            dump_molecular_orbital(
-                writer,
-                basis,
-                c,
-                mo_index,
-                grid,
-                orbital_filename(output_filename_prefix, mo_index),
+    timed(format!("writing {} orbitals", orbitals.len()), || {
+        for (mo_index, values) in orbitals.iter().enumerate() {
+            let filename = orbital_filename(output_filename_prefix, mo_index);
+            timed(
+                format!("writing orbital {mo_index} to '{filename}'"),
+                || writer.write(&filename, values),
             )?;
         }
         Ok(())
@@ -308,18 +319,14 @@ fn dump_all_molecular_orbitals(
 /// into a single cube file, combining every occupied orbital into one field.
 fn dump_electron_density(
     writer: &CubeWriter,
-    basis: &BasisSet,
-    c: &Array2<f64>,
-    grid: &Grid,
+    occupied: &[Vec<f64>],
+    num_points: usize,
     output_filename: &str,
 ) -> std::io::Result<()> {
-    let n_electrons: usize = writer.atoms.iter().map(|a| a.charge as usize).sum();
-    let n_occ = basis.num_occupied_orbitals(n_electrons);
-
     timed(
         format!("writing electron density to '{output_filename}'"),
         || {
-            let values = evaluate_density(grid, basis, c, n_occ);
+            let values = density_from_orbitals(occupied, num_points);
             writer.write(output_filename, &values)
         },
     )
@@ -385,17 +392,35 @@ pub fn dump(
 ) -> std::io::Result<()> {
     let grid = compute_grid(atoms);
     let writer = CubeWriter::new(atoms.to_vec(), grid.clone());
+    let num_points = grid.nx * grid.ny * grid.nz;
+    let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
+    let n_occ = basis.num_occupied_orbitals(n_electrons);
+
+    // The orbital values on the grid are shared by the orbital and density cubes.
+    let num_orbitals = if formats.contains(&CubeFormat::Orbitals) {
+        c.ncols()
+    } else if formats.contains(&CubeFormat::Density) {
+        n_occ
+    } else {
+        0
+    };
+    let orbitals = if num_orbitals > 0 {
+        timed(format!("evaluating {num_orbitals} orbitals on the grid"), || {
+            Ok(evaluate_orbitals(&grid, basis, c, num_orbitals))
+        })?
+    } else {
+        Vec::new()
+    };
 
     for format in formats {
         match format {
             CubeFormat::Orbitals => {
-                dump_all_molecular_orbitals(&writer, basis, c, &grid, &output_filename_prefix)?
+                dump_all_molecular_orbitals(&writer, &orbitals, &output_filename_prefix)?
             }
             CubeFormat::Density => dump_electron_density(
                 &writer,
-                basis,
-                c,
-                &grid,
+                &orbitals[..n_occ],
+                num_points,
                 &density_filename(&output_filename_prefix),
             )?,
             CubeFormat::Esp => dump_electrostatic_potential(
