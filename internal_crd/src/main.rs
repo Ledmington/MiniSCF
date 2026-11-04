@@ -36,18 +36,25 @@ fn write_xyz(path: &String, content: &XYZFile) -> io::Result<()> {
     Ok(())
 }
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args = Args::parse();
-
-    let mut xyz_file = read_xyz(&args.input)?;
+fn run(args: &Args) -> Result<(), String> {
+    let mut xyz_file = read_xyz(&args.input)
+        .map_err(|e| format!("Could not read input file '{}': {e}", args.input))?;
 
     if xyz_file.atoms.is_empty() {
-        return Err("XYZ file contains no atoms".into());
+        return Err(format!("Input file '{}' contains no atoms.", args.input));
     }
 
     normalize_xyz(&mut xyz_file.atoms);
 
-    write_xyz(&args.output, &xyz_file)?;
+    write_xyz(&args.output, &xyz_file)
+        .map_err(|e| format!("Could not write output file '{}': {e}.", args.output))
+}
 
-    Ok(())
+fn main() {
+    let args = Args::parse();
+
+    if let Err(e) = run(&args) {
+        eprintln!("Error: {e}");
+        std::process::exit(1);
+    }
 }

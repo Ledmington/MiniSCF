@@ -60,16 +60,25 @@ struct Args {
     max_iterations: usize,
 
     /// Tolerance value for the SCF energy (Hartree)
-    #[arg(long, default_value = "1e-10")]
+    #[arg(long, default_value = "1e-10", value_parser = positive_float)]
     e_tol: f64,
 
     /// Tolerance value for the SCF density
-    #[arg(long, default_value = "1e-8")]
+    #[arg(long, default_value = "1e-8", value_parser = positive_float)]
     p_tol: f64,
 
     /// Minimum residual to reach
-    #[arg(long, default_value = "1e-15")]
+    #[arg(long, default_value = "1e-15", value_parser = positive_float)]
     min_residual: f64,
+}
+
+/// Parses a strictly positive, finite floating-point number (for the SCF tolerances).
+fn positive_float(value: &str) -> Result<f64, String> {
+    match value.parse::<f64>() {
+        Ok(x) if x > 0.0 && x.is_finite() => Ok(x),
+        Ok(_) => Err(format!("must be a positive number, got '{value}'")),
+        Err(e) => Err(format!("{e}")),
+    }
 }
 
 /// Length units of the input coordinates. The simulation itself always works in bohr.
@@ -115,6 +124,22 @@ fn check_input_file(path: &str, description: &str) {
     if !Path::new(path).is_file() {
         fail(&format!(
             "The {description} '{path}' does not exist or is not a file."
+        ));
+    }
+}
+
+/// The number of electrons of the neutral molecule: one per unit of nuclear charge.
+fn electron_count(atoms: &[Atom]) -> usize {
+    atoms.iter().map(|atom| usize::from(atom.charge)).sum()
+}
+
+/// RHF puts two electrons in each occupied orbital, so it cannot describe a molecule with
+/// an odd number of electrons.
+fn check_closed_shell(atoms: &[Atom]) {
+    let n_electrons = electron_count(atoms);
+    if !n_electrons.is_multiple_of(2) {
+        fail(&format!(
+            "The molecule has an odd number of electrons ({n_electrons}): restricted Hartree-Fock needs a closed-shell molecule."
         ));
     }
 }
@@ -170,7 +195,7 @@ fn check_output_files(filenames: &[String], force: bool) {
     }
 }
 
-fn main() -> std::io::Result<()> {
+fn main() {
     let beginning = Instant::now();
 
     logger::init();
@@ -194,7 +219,14 @@ fn main() -> std::io::Result<()> {
             args.input_xyz
         ))
     });
+    if input_file.atoms.is_empty() {
+        fail(&format!(
+            "The input file '{}' contains no atoms.",
+            args.input_xyz
+        ));
+    }
     let atoms = atoms_in_bohr(&input_file.atoms, args.units);
+    check_closed_shell(&atoms);
 
     log::info!(" ### Input system (bohr, read as {:?}) ### ", args.units);
     for atom in atoms.iter() {
@@ -216,7 +248,12 @@ fn main() -> std::io::Result<()> {
         ))
     });
 
-    let basis = build_basis(&atoms, &basis_library);
+    let basis = build_basis(&atoms, &basis_library).unwrap_or_else(|err| {
+        fail(&format!(
+            "Cannot use basis set file '{}': {err}.",
+            args.basis_file
+        ))
+    });
 
     check_output_files(
         &output_filenames(&args.formats, &args.output_prefix, basis.functions.len()),
@@ -244,7 +281,9 @@ fn main() -> std::io::Result<()> {
 
     let c = run_rhf_simulation(&atoms, &basis, &opt_params);
 
-    dump(&atoms, &basis, &c, &args.formats, args.output_prefix)?;
+    if let Err(err) = dump(&atoms, &basis, &c, &args.formats, args.output_prefix) {
+        fail(&format!("Could not write the cube files: {err}."));
+    }
 
     log::info!("All done!");
 
@@ -252,8 +291,6 @@ fn main() -> std::io::Result<()> {
         let elapsed = Instant::now() - beginning;
         log::info!("Total execution time = {elapsed:?}");
     }
-
-    Ok(())
 }
 
 #[cfg(test)]
@@ -317,6 +354,34 @@ mod tests {
         assert_eq!(args.log_file.as_deref(), Some("run.log"));
         let short = Args::try_parse_from(["rhf_sim", "-l", "run.log"]).unwrap();
         assert_eq!(short.log_file.as_deref(), Some("run.log"));
+    }
+
+    #[test]
+    fn tolerances_must_be_positive() {
+        for flag in ["--e-tol", "--p-tol", "--min-residual"] {
+            for value in ["0", "-1e-8", "inf", "NaN", "abc"] {
+                assert!(
+                    Args::try_parse_from(["rhf_sim", flag, value]).is_err(),
+                    "{flag} {value}"
+                );
+            }
+            assert!(Args::try_parse_from(["rhf_sim", flag, "1e-6"]).is_ok());
+        }
+    }
+
+    #[test]
+    fn electron_count_sums_nuclear_charges() {
+        let water = [
+            Atom {
+                element: element::OXYGEN,
+                position: Point::new(0.0, 0.0, 0.0),
+                charge: 8,
+            },
+            hydrogen_at(1.0, 0.0, 0.0),
+            hydrogen_at(0.0, 1.0, 0.0),
+        ];
+        assert_eq!(electron_count(&water), 10);
+        assert_eq!(electron_count(&water[..2]), 9);
     }
 
     #[test]

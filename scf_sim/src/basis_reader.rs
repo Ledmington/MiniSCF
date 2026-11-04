@@ -27,7 +27,7 @@ pub fn parse_nwchem_basis(path: &str) -> Result<BasisLibrary, String> {
         ));
     }
 
-    let result = parse_nwchem_basis_text(&text);
+    let result = parse_nwchem_basis_text(&text)?;
 
     {
         let elapsed = Instant::now() - beginning;
@@ -58,7 +58,7 @@ struct PendingBlock {
 }
 
 impl PendingBlock {
-    fn add_primitive(&mut self, exponent: f64, coefficients: &[f64]) {
+    fn add_primitive(&mut self, exponent: f64, coefficients: &[f64]) -> Result<(), String> {
         if self.shells.is_empty() {
             self.shells = match &self.kind {
                 ShellKind::Sp => vec![AngularMomentum::S, AngularMomentum::P],
@@ -72,14 +72,14 @@ impl PendingBlock {
             .collect();
         }
 
-        assert_eq!(
-            coefficients.len(),
-            self.shells.len(),
-            "Expected {} contraction coefficients for exponent {exponent} of element '{}' but found {}",
-            self.shells.len(),
-            self.symbol,
-            coefficients.len()
-        );
+        if coefficients.len() != self.shells.len() {
+            return Err(format!(
+                "expected {} contraction coefficients for exponent {exponent} of element '{}' but found {}",
+                self.shells.len(),
+                self.symbol,
+                coefficients.len()
+            ));
+        }
 
         for (shell, &coefficient) in self.shells.iter_mut().zip(coefficients) {
             // In general contractions most columns are zero for most exponents: such
@@ -88,11 +88,14 @@ impl PendingBlock {
                 shell.primitives.push((exponent, coefficient));
             }
         }
+        Ok(())
     }
 
-    fn flush_into(self, library: &mut BasisLibrary) {
-        let element = element::from_symbol(self.symbol);
+    fn flush_into(self, library: &mut BasisLibrary) -> Result<(), String> {
+        let element = element::from_symbol(&self.symbol)
+            .ok_or_else(|| format!("unknown element symbol '{}'", self.symbol))?;
         library.entry(element).or_default().extend(self.shells);
+        Ok(())
     }
 }
 
@@ -114,14 +117,15 @@ fn ecp_elements(text: &str) -> Vec<&str> {
     elements
 }
 
-pub(crate) fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
+pub(crate) fn parse_nwchem_basis_text(text: &str) -> Result<BasisLibrary, String> {
     let mut library: HashMap<Element, Vec<ShellTemplate>> = HashMap::new();
 
     let mut current_block: Option<PendingBlock> = None;
     let mut spherical = false;
     let mut has_high_angular_momentum = false;
 
-    for line in text.lines() {
+    for (line_index, line) in text.lines().enumerate() {
+        let line_number = line_index + 1;
         let trimmed = line.trim();
 
         if trimmed.starts_with("BASIS") {
@@ -142,7 +146,9 @@ pub(crate) fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
         // Shell header
         if fields.len() == 2 && fields.iter().all(|s| s.parse::<f64>().is_err()) {
             if let Some(block) = current_block.take() {
-                block.flush_into(&mut library);
+                block
+                    .flush_into(&mut library)
+                    .map_err(|e| format!("line {line_number}: {e}"))?;
             }
 
             let kind = match fields[1] {
@@ -151,7 +157,11 @@ pub(crate) fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
                 "D" => ShellKind::Single(AngularMomentum::D),
                 "F" => ShellKind::Single(AngularMomentum::F),
                 "SP" => ShellKind::Sp,
-                _ => panic!("Unknown orbital '{}'", fields[1]),
+                other => {
+                    return Err(format!(
+                        "line {line_number}: unsupported shell type '{other}' (supported: S, P, SP, D, F)"
+                    ));
+                }
             };
             if matches!(fields[1], "D" | "F") {
                 has_high_angular_momentum = true;
@@ -168,22 +178,25 @@ pub(crate) fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
 
         // Primitive: an exponent followed by one contraction coefficient per shell
         if fields.len() >= 2 {
-            let exponent = fields[0].parse::<f64>().unwrap();
-            let coefficients: Vec<f64> = fields[1..]
+            let numbers = fields
                 .iter()
-                .map(|c| c.parse::<f64>().unwrap())
-                .collect();
+                .map(|field| field.parse::<f64>().ok())
+                .collect::<Option<Vec<f64>>>()
+                .ok_or_else(|| format!("line {line_number}: invalid primitive line '{trimmed}'"))?;
 
             current_block
                 .as_mut()
-                .expect("Found primitive coefficients before any shell header")
-                .add_primitive(exponent, &coefficients);
+                .ok_or_else(|| {
+                    format!("line {line_number}: primitive found before any shell header")
+                })?
+                .add_primitive(numbers[0], &numbers[1..])
+                .map_err(|e| format!("line {line_number}: {e}"))?;
         }
     }
 
     // Final flush
     if let Some(block) = current_block.take() {
-        block.flush_into(&mut library);
+        block.flush_into(&mut library)?;
     }
 
     if spherical && has_high_angular_momentum {
@@ -192,19 +205,21 @@ pub(crate) fn parse_nwchem_basis_text(text: &str) -> BasisLibrary {
         );
     }
 
-    library
+    Ok(library)
 }
 
-pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
+/// Instantiates the basis set of `atoms` from `basis_library`. Fails if the library has
+/// no basis functions for one of the elements.
+pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> Result<BasisSet, String> {
     let mut shells: Vec<(Shell, (u8, u8, u8))> = Vec::new();
 
     for atom in atoms {
-        let templates = basis_library.get(&atom.element).unwrap_or_else(|| {
-            panic!(
-                "No basis functions found for element '{}'",
+        let templates = basis_library.get(&atom.element).ok_or_else(|| {
+            format!(
+                "the basis set has no functions for element '{}'",
                 atom.element.symbol
             )
-        });
+        })?;
 
         for template in templates {
             let raw_primitives: Vec<PrimitiveGaussian> = template
@@ -229,7 +244,7 @@ pub fn build_basis(atoms: &[Atom], basis_library: &BasisLibrary) -> BasisSet {
         }
     }
 
-    BasisSet::new(shells)
+    Ok(BasisSet::new(shells))
 }
 
 /// Contracted shells whose self-overlap is within this tolerance of 1 are used as written.
@@ -319,7 +334,7 @@ END
             rng.random_range(-10.0..10.0),
         );
 
-        let library = parse_nwchem_basis_text(text);
+        let library = parse_nwchem_basis_text(text).unwrap();
         let basis = build_basis(
             &[Atom {
                 element: element::HYDROGEN,
@@ -327,7 +342,8 @@ END
                 charge: 1,
             }],
             &library,
-        );
+        )
+        .unwrap();
         let shell = Shell {
             center,
             primitives: vec![
@@ -377,7 +393,7 @@ END
             rng.random_range(-10.0..10.0),
         );
 
-        let library = parse_nwchem_basis_text(text);
+        let library = parse_nwchem_basis_text(text).unwrap();
         let basis = build_basis(
             &[Atom {
                 element: element::CARBON,
@@ -385,7 +401,8 @@ END
                 charge: 6,
             }],
             &library,
-        );
+        )
+        .unwrap();
 
         let expected = BasisSet {
             functions: vec![
@@ -479,7 +496,7 @@ C    D
 END
 ";
         let center = Point::new(0.5, -1.0, 2.0);
-        let library = parse_nwchem_basis_text(text);
+        let library = parse_nwchem_basis_text(text).unwrap();
         let basis = build_basis(
             &[Atom {
                 element: element::CARBON,
@@ -487,7 +504,8 @@ END
                 charge: 6,
             }],
             &library,
-        );
+        )
+        .unwrap();
 
         // [3s,2p,1d] with Cartesian d: 3 + 2 * 3 + 6 = 15 functions.
         assert_eq!(basis.functions.len(), 15);
@@ -536,7 +554,7 @@ END
 
     #[test]
     fn general_contractions_are_split_into_shells() {
-        let library = parse_nwchem_basis_text(CC_PVTZ_SAMPLE);
+        let library = parse_nwchem_basis_text(CC_PVTZ_SAMPLE).unwrap();
         let hydrogen = &library[&element::HYDROGEN];
 
         // [3s,2p,1d]: one shell per coefficient column, without the zero coefficients.
@@ -579,7 +597,7 @@ END
 
     #[test]
     fn f_shell() {
-        let library = parse_nwchem_basis_text(CC_PVTZ_SAMPLE);
+        let library = parse_nwchem_basis_text(CC_PVTZ_SAMPLE).unwrap();
         assert_eq!(
             library[&element::OXYGEN],
             vec![ShellTemplate {
@@ -603,7 +621,8 @@ END
                 },
             ],
             &library,
-        );
+        )
+        .unwrap();
 
         // Hydrogen: 3 s + 2 * 3 p + 6 d = 15 functions; oxygen: 10 Cartesian f functions.
         assert_eq!(basis.functions.len(), 25);
@@ -669,15 +688,57 @@ END
     }
 
     #[test]
-    #[should_panic(expected = "Expected 2 contraction coefficients")]
     fn inconsistent_number_of_coefficients() {
-        parse_nwchem_basis_text(
+        let err = parse_nwchem_basis_text(
             "BASIS \"ao basis\" CARTESIAN PRINT
 H    S
       3.387000E+01           0.1           0.2
       5.095000E+00           0.3
 END
 ",
+        )
+        .unwrap_err();
+        assert!(
+            err.starts_with("line 4: expected 2 contraction coefficients"),
+            "{err}"
         );
+    }
+
+    #[test]
+    fn malformed_files_are_errors() {
+        for (text, expected) in [
+            (
+                "H    G\n 1.0 1.0\nEND\n",
+                "line 1: unsupported shell type 'G'",
+            ),
+            ("H    S\n 1.0 abc\nEND\n", "line 2: invalid primitive line"),
+            (
+                " 1.0 1.0\nEND\n",
+                "line 1: primitive found before any shell header",
+            ),
+            ("Xx   S\n 1.0 1.0\nEND\n", "unknown element symbol 'Xx'"),
+            (
+                "Xx   S\n 1.0 1.0\nH    S\n 1.0 1.0\nEND\n",
+                "line 3: unknown element symbol 'Xx'",
+            ),
+        ] {
+            let err = parse_nwchem_basis_text(text).unwrap_err();
+            assert!(err.contains(expected), "expected '{expected}' in '{err}'");
+        }
+    }
+
+    #[test]
+    fn missing_element_is_an_error() {
+        let library = parse_nwchem_basis_text("H    S\n 1.0 1.0\nEND\n").unwrap();
+        let err = build_basis(
+            &[Atom {
+                element: element::OXYGEN,
+                position: Point::new(0.0, 0.0, 0.0),
+                charge: 8,
+            }],
+            &library,
+        )
+        .unwrap_err();
+        assert_eq!(err, "the basis set has no functions for element 'O'");
     }
 }

@@ -26,15 +26,22 @@ fn normalize_basis(name: &str) -> String {
 }
 
 fn atomic_number(symbol_or_number: &str) -> Result<u8> {
-    if let Ok(num) = symbol_or_number.parse::<u8>() {
-        return Ok(num);
+    if let Ok(num) = symbol_or_number.parse::<usize>() {
+        return num
+            .checked_sub(1)
+            .and_then(|index| element::ELEMENTS.get(index))
+            .map(|element| element.number)
+            .ok_or_else(|| {
+                anyhow!(
+                    "Invalid atomic number {num}: expected 1 to {}",
+                    element::ELEMENTS.len()
+                )
+            });
     }
 
-    let symbol = symbol_or_number.to_ascii_lowercase();
-    let element = element::from_symbol(symbol);
-    let number = element.number;
-
-    Ok(number)
+    element::from_symbol(symbol_or_number)
+        .map(|element| element.number)
+        .ok_or_else(|| anyhow!("Unknown element symbol '{symbol_or_number}'"))
 }
 
 fn run(args: &Args) -> Result<()> {
@@ -79,5 +86,25 @@ fn main() {
     if let Err(e) = run(&args) {
         eprintln!("Error: {e:#}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn atomic_number_accepts_symbols_and_numbers() {
+        assert_eq!(atomic_number("H").unwrap(), 1);
+        assert_eq!(atomic_number("cl").unwrap(), 17);
+        assert_eq!(atomic_number("8").unwrap(), 8);
+        assert_eq!(atomic_number("118").unwrap(), 118);
+    }
+
+    #[test]
+    fn atomic_number_rejects_invalid_input() {
+        for input in ["0", "119", "300", "Xx", ""] {
+            assert!(atomic_number(input).is_err(), "{input}");
+        }
     }
 }

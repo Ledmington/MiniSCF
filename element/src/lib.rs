@@ -601,13 +601,12 @@ pub const ELEMENTS: [Element; 118] = [
     OGANESSON,
 ];
 
-/// Looks up an element by its symbol, ignoring case.
-pub fn from_symbol(symbol: String) -> Element {
+/// Looks up an element by its symbol, ignoring case. Returns `None` for an unknown symbol.
+pub fn from_symbol(symbol: &str) -> Option<Element> {
     ELEMENTS
         .iter()
-        .find(|element| element.symbol.eq_ignore_ascii_case(&symbol))
+        .find(|element| element.symbol.eq_ignore_ascii_case(symbol))
         .cloned()
-        .unwrap_or_else(|| panic!("Unknown element with symbol '{symbol}'"))
 }
 
 #[cfg(test)]
@@ -664,15 +663,21 @@ mod tests {
     #[test]
     fn from_symbol_roundtrips() {
         for element in ELEMENTS {
-            assert_eq!(from_symbol(element.symbol.to_string()), element);
-            assert_eq!(from_symbol(element.symbol.to_ascii_uppercase()), element);
-            assert_eq!(from_symbol(element.symbol.to_ascii_lowercase()), element);
+            assert_eq!(from_symbol(element.symbol), Some(element.clone()));
+            assert_eq!(
+                from_symbol(&element.symbol.to_ascii_uppercase()),
+                Some(element.clone())
+            );
+            assert_eq!(
+                from_symbol(&element.symbol.to_ascii_lowercase()),
+                Some(element)
+            );
         }
     }
 
     #[test]
-    #[should_panic(expected = "Unknown element")]
     fn from_symbol_rejects_unknown() {
-        from_symbol("Xx".to_string());
+        assert_eq!(from_symbol("Xx"), None);
+        assert_eq!(from_symbol(""), None);
     }
 }

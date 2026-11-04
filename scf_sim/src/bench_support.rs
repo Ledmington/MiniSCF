@@ -30,7 +30,8 @@ impl Molecule {
     /// Builds the basis set from `basis_text` (NWChem format) for `atoms` (positions in
     /// bohr), then runs a full SCF to have realistic MO coefficients and density.
     pub fn new(atoms: Vec<Atom>, basis_text: &str) -> Self {
-        let basis = build_basis(&atoms, &parse_nwchem_basis_text(basis_text));
+        let library = parse_nwchem_basis_text(basis_text).expect("valid basis set");
+        let basis = build_basis(&atoms, &library).expect("basis functions for every atom");
         let c = run_rhf_simulation(&atoms, &basis, &Self::parameters());
         let n_electrons: usize = atoms.iter().map(|a| a.charge as usize).sum();
         let density = density_matrix(&c, basis.num_occupied_orbitals(n_electrons));

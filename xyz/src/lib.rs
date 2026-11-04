@@ -48,8 +48,8 @@ pub fn read_xyz(path: &str) -> Result<XYZFile, String> {
             return Err(format!("invalid atom line: '{line}'."));
         }
 
-        let symbol = parts[0].to_string();
-        let element = element::from_symbol(symbol);
+        let element = element::from_symbol(parts[0])
+            .ok_or_else(|| format!("unknown element symbol '{}'", parts[0]))?;
 
         let x: f64 = parts[1]
             .parse()
@@ -197,5 +197,14 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn unknown_element_is_an_error() {
+        let path = std::env::temp_dir().join(format!("xyz_unknown_{}.xyz", std::process::id()));
+        std::fs::write(&path, "1\ncomment\nXx 0.0 0.0 0.0\n").unwrap();
+        let result = read_xyz(path.to_str().unwrap());
+        std::fs::remove_file(&path).unwrap();
+        assert_eq!(result.err().as_deref(), Some("unknown element symbol 'Xx'"));
     }
 }
